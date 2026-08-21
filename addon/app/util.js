@@ -99,6 +99,24 @@ function fmtDays(days) {
   return t("unit.days", {n: days});
 }
 
+function fmtDuration(secs) {
+  const m = Math.floor(secs / 60), s = secs % 60;
+  return m > 0 ? `${m}m${String(s).padStart(2, "0")}s` : `${s}s`;
+}
+
+function fmtTime(ts) {
+  return new Date(ts).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
+}
+
+function fmtDate(ts) {
+  const d = new Date(ts);
+  const today = new Date();
+  const yesterday = new Date(Date.now() - 86400000);
+  if (d.toDateString() === today.toDateString()) return t("time.today");
+  if (d.toDateString() === yesterday.toDateString()) return t("time.yesterday");
+  return d.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" });
+}
+
 function fmtTime12(hhmm) {
   if (!hhmm) return "--";
   const [h, m] = hhmm.split(":").map(Number);

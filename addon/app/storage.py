@@ -51,7 +51,8 @@ ALLOWED_DEVICE_FIELDS = {
 }
 
 ALLOWED_PET_FIELDS = {
-    "name", "breed", "weight_kg", "image_url", "device_serials",
+    "name", "breed", "weight_kg", "image_url", "device_serials", "rfid_tag",
+    "notify_bell", "notify_email", "notify_mobile",
 }
 
 _DEVICE_DEFAULTS = {
@@ -220,11 +221,21 @@ def save_device_feeding_plans(serial: str, plans: list):
 def log_feeder_event(serial: str, event_type: str, portions: int = 0, extra: dict | None = None):
     """Append a timestamped feeder event. event_type: 'food_dispensed' | 'pet_eating'."""
     import time as _time
-    entry = {"ts": int(_time.time() * 1000), "type": event_type, "portions": portions}
+    now_ms = int(_time.time() * 1000)
+    entry = {"ts": now_ms, "type": event_type, "portions": portions}
     if extra:
         entry.update(extra)
     data = _load()
     log = data.setdefault("_feeder_log", {}).setdefault(serial, [])
+    # Deduplicate RFID-attributed eating sessions: skip if a pet_eating entry with the
+    # same rfid_tag already exists within the last 120 seconds (door + RFID both fire).
+    if event_type == "pet_eating" and entry.get("rfid_tag"):
+        cutoff = now_ms - 120_000
+        for prev in reversed(log):
+            if prev.get("ts", 0) < cutoff:
+                break
+            if prev.get("type") == "pet_eating" and prev.get("rfid_tag") == entry["rfid_tag"]:
+                return
     log.append(entry)
     if len(log) > 200:
         data["_feeder_log"][serial] = log[-200:]

@@ -2,6 +2,21 @@
 
 For full release notes and details on each version, see the [GitHub Releases page](https://github.com/smcneece/petlibro-local/releases).
 
+## 2026.08.2
+- Offline watchdog: devices are now marked offline in Home Assistant and the app if no MQTT message is received within 5 minutes, catching power loss and Wi-Fi drops without requiring a broker restart
+- Offline and back-online notifications now fire correctly via email, mobile push, and HA persistent notification when a device goes silent or reconnects
+- Notification subject lines now include the alert type so the reason is visible without opening the email
+- Alert bell in the app header now opens a dropdown listing all active alerts by device; clicking an alert opens that device's detail modal
+- RFID tag detection: confirmed field names from live capture (`rfid` for tag, `type` for NEAR/LEAVE action). Eating sessions are logged with duration and linked to the pet profile. RFID tag number auto-detected on first scan and stored on the pet profile, or entered manually behind an eye toggle
+- RFID-only pet meal tracking: pet Recent Activity shows only RFID-confirmed eating sessions. Duration is measured from feeder door open to close (accurate eating time), but only when the door was triggered by an RFID scan. Manual access, bowl cleaning, and scheduled dispenses are excluded. Door-only events appear in the device log as "Door open for Xs"
+- 30-second minimum for RFID eating sessions; short tag passes and walk-bys are ignored. Duplicate entries from the same session are deduplicated automatically
+- Pet activity notifications: when an RFID eating session is detected, a notification fires via the same channels as device alerts (bell, email, mobile push) — e.g. "Zoey ate for 3m25s at Zoey's Feeder". Per-pet notification toggles stored on the pet profile
+- Pet profiles now show a Recent Activity log. Foundation is in place to extend pet timelines to fountains and litter boxes as RFID-capable devices are added
+- Delete pet moved from the modal footer to a trash icon on the pet card, preventing accidental deletion confusion with the activity log
+- Pet modal Save button is now compact and centered rather than full-width
+- Timestamps in activity logs now zero-pad single-digit hours (07:03 AM instead of 7:03 AM) for consistent column alignment
+- Pet list on desktop is now centered and max-width constrained instead of stretching full screen width
+
 ## 2026.08.1
 - Initial public beta
 - Local MQTT support for **Dockstream 2** and **Dockstream 2 Cordless** fountains. Completely offline, no PetLibro cloud required

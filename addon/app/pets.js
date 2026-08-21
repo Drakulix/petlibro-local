@@ -13,18 +13,34 @@ function renderPets() {
     </div>`;
     return;
   }
-  list.innerHTML = _pets.map(p => `<div class="pet-card" data-pet-id="${escHtml(p.id)}">
+  list.innerHTML = _pets.map(p => `<div class="pet-card" data-pet-id="${escHtml(p.id)}" style="position:relative">
     <div class="pet-avatar">${p.image_url ? `<img src="${escHtml(p.image_url)}" alt="">` : "🐾"}</div>
     <div class="pet-info">
       <div class="pet-name">${escHtml(p.name || "Unnamed pet")}</div>
       <div class="pet-sub">${escHtml(p.breed || "")}${p.weight_kg ? ` · ${useImperial() ? (p.weight_kg * 2.20462).toFixed(1) + " lbs" : p.weight_kg + " kg"}` : ""}</div>
     </div>
+    <button class="btn-pet-delete-card" data-pet-id="${escHtml(p.id)}" title="Delete pet"
+      style="position:absolute;top:50%;right:10px;transform:translateY(-50%);background:none;border:none;cursor:pointer;font-size:20px;line-height:1;padding:2px;opacity:0.5"
+      onmouseenter="this.style.opacity='1'"
+      onmouseleave="this.style.opacity='0.5'">🗑️</button>
   </div>`).join("");
 
   list.querySelectorAll(".pet-card").forEach(card => {
-    card.addEventListener("click", () => {
+    card.addEventListener("click", (e) => {
+      if (e.target.closest(".btn-pet-delete-card")) return;
       const pet = _pets.find(p => p.id === card.dataset.petId);
       if (pet) openPetModal(pet);
+    });
+  });
+
+  list.querySelectorAll(".btn-pet-delete-card").forEach(btn => {
+    btn.addEventListener("click", async (e) => {
+      e.stopPropagation();
+      const pet = _pets.find(p => p.id === btn.dataset.petId);
+      const name = pet?.name || "this pet";
+      if (!confirm(`Delete ${name}?`)) return;
+      await api("DELETE", `/api/pets/${btn.dataset.petId}`);
+      await refresh();
     });
   });
 }
@@ -90,7 +106,58 @@ function openPetModal(pet) {
     deviceSection.style.display = "none";
   }
 
-  document.getElementById("btn-pet-delete").style.display = pet ? "" : "none";
+  // Notification toggles
+  document.getElementById("p-notify-bell").checked   = pet ? (pet.notify_bell   ?? true)  : true;
+  document.getElementById("p-notify-email").checked  = pet ? (pet.notify_email  ?? true)  : true;
+  document.getElementById("p-notify-mobile").checked = pet ? (pet.notify_mobile ?? false) : false;
+
+  // RFID tag -- show section only if pet already has a tag or is assigned to an RFID feeder
+  const rfidInput   = document.getElementById("p-rfid-tag");
+  const rfidEye     = document.getElementById("btn-rfid-eye");
+  rfidInput.value = pet?.rfid_tag || "";
+  rfidInput.type  = "password";
+  if (rfidEye) {
+    rfidEye.onclick = () => {
+      rfidInput.type = rfidInput.type === "password" ? "text" : "password";
+    };
+  }
+
+  // Activity log
+  const actSection = document.getElementById("p-activity-section");
+  const actLog     = document.getElementById("p-activity-log");
+  if (pet) {
+    actSection.style.display = "";
+    actLog.innerHTML = `<div style="color:var(--pl-subtext);font-size:12px">Loading...</div>`;
+    api("GET", `/api/pets/${pet.id}/log?limit=30`).then(events => {
+      if (!events.length) {
+        actLog.innerHTML = `<div style="color:var(--pl-subtext);font-size:12px">No activity recorded yet.</div>`;
+        return;
+      }
+      actLog.innerHTML = events.map(e => {
+        const time = escHtml(fmtTime(e.ts));
+        const dev  = e.device_name ? `<span style="color:var(--pl-subtext)"> · ${escHtml(e.device_name)}</span>` : "";
+        let desc;
+        if (e.type === "pet_eating") {
+          desc = e.duration_secs ? `Ate for ${escHtml(fmtDuration(e.duration_secs))}` : "Ate";
+        } else if (e.type === "pet_drinking") {
+          desc = e.duration_secs ? `Drank for ${escHtml(fmtDuration(e.duration_secs))}` : "Drank";
+        } else if (e.type === "pet_litter") {
+          desc = e.duration_secs ? `Used litter box (${escHtml(fmtDuration(e.duration_secs))})` : "Used litter box";
+        } else {
+          desc = escHtml(e.type);
+        }
+        return `<div style="display:flex;gap:8px;align-items:baseline">
+          <span style="color:var(--pl-subtext);white-space:nowrap;font-size:12px">${time}</span>
+          <span>${desc}${dev}</span>
+        </div>`;
+      }).join("");
+    }).catch(() => {
+      actLog.innerHTML = `<div style="color:var(--pl-subtext);font-size:12px">Could not load activity.</div>`;
+    });
+  } else {
+    actSection.style.display = "none";
+  }
+
   document.getElementById("modal-pet").classList.add("open");
 }
 
@@ -99,10 +166,15 @@ async function savePet() {
   const rawWeight = parseFloat(document.getElementById("p-weight").value);
   const weight_kg = isNaN(rawWeight) ? null : (imperial ? rawWeight / 2.20462 : rawWeight);
 
+  const rfidVal = (document.getElementById("p-rfid-tag")?.value || "").trim();
   const body = {
-    name: document.getElementById("p-name").value.trim(),
-    breed: document.getElementById("p-breed").value.trim(),
-    weight_kg: weight_kg != null ? parseFloat(weight_kg.toFixed(3)) : null,
+    name:          document.getElementById("p-name").value.trim(),
+    breed:         document.getElementById("p-breed").value.trim(),
+    weight_kg:     weight_kg != null ? parseFloat(weight_kg.toFixed(3)) : null,
+    rfid_tag:      rfidVal || null,
+    notify_bell:   document.getElementById("p-notify-bell").checked,
+    notify_email:  document.getElementById("p-notify-email").checked,
+    notify_mobile: document.getElementById("p-notify-mobile").checked,
   };
   try {
     let savedPet;

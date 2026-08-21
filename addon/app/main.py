@@ -18,7 +18,7 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name
 logging.getLogger("aiohttp.access").setLevel(logging.WARNING)
 _LOGGER = logging.getLogger(__name__)
 
-VERSION = "2026.08.1"
+VERSION = "2026.08.2"
 
 # Credential capture state
 _capture_state: dict = {"status": "idle", "result": {}}
@@ -51,7 +51,11 @@ def _devices_with_state() -> list:
 
 async def handle_index(request):
     ingress_path = request.headers.get("X-Ingress-Path", "").rstrip("/")
-    return web.Response(text=_build_html(ingress_path), content_type="text/html")
+    return web.Response(
+        text=_build_html(ingress_path),
+        content_type="text/html",
+        headers={"Cache-Control": "no-store"},
+    )
 
 
 async def handle_icon(request):
@@ -65,7 +69,7 @@ async def handle_locale(request):
     path = f"/app/locales/{lang}.json"
     if not os.path.exists(path):
         return web.Response(status=404)
-    return web.FileResponse(path)
+    return web.FileResponse(path, headers={"Cache-Control": "no-cache"})
 
 
 async def handle_static(request):
@@ -73,7 +77,7 @@ async def handle_static(request):
     path = f"/app/{name}"
     if not os.path.exists(path):
         return web.Response(status=404)
-    return web.FileResponse(path)
+    return web.FileResponse(path, headers={"Cache-Control": "no-cache"})
 
 
 async def handle_device_image(request):
@@ -470,6 +474,36 @@ async def handle_api_feeder_log(request):
     return web.json_response(storage.get_feeder_log(serial, limit))
 
 
+async def handle_api_pet_log(request):
+    """Return feeder activity events for a specific pet, newest first."""
+    pet_id = request.match_info["pet_id"]
+    limit  = min(int(request.query.get("limit", 60)), 200)
+
+    pets = storage.get_pets()
+    pet = pets.get(pet_id, {})
+    pet_rfid = str(pet.get("rfid_tag")) if pet.get("rfid_tag") else None
+
+    events = []
+    devices = storage.get_devices()
+    for serial, cfg in devices.items():
+        pet_ids = cfg.get("pet_ids", [])
+        if pet_id not in pet_ids:
+            continue
+        log = storage.get_feeder_log(serial, limit)
+        sole_pet = (len(pet_ids) == 1 and pet_id in pet_ids)
+        for entry in log:
+            entry_rfid = str(entry.get("rfid_tag")) if entry.get("rfid_tag") else None
+            if (
+                entry.get("pet_id") == pet_id
+                or (pet_rfid and entry_rfid == pet_rfid)
+                or (sole_pet and entry.get("type") == "pet_eating")
+            ):
+                events.append({**entry, "serial": serial,
+                                "device_name": cfg.get("name") or serial[:8]})
+    events.sort(key=lambda e: e.get("ts", 0), reverse=True)
+    return web.json_response(events[:limit])
+
+
 async def handle_api_pet_image_upload(request):
     pet_id = request.match_info["pet_id"]
     ingress_path = request.headers.get("X-Ingress-Path", "").rstrip("/")
@@ -613,6 +647,7 @@ def main():
     app.router.add_post("/api/pets/{pet_id}",            handle_api_pet_post)
     app.router.add_delete("/api/pets/{pet_id}",          handle_api_pet_delete)
     app.router.add_post("/api/pets/{pet_id}/image",      handle_api_pet_image_upload)
+    app.router.add_get("/api/pets/{pet_id}/log",         handle_api_pet_log)
 
     app.router.add_get("/api/settings",                  handle_api_settings_get)
     app.router.add_post("/api/settings",                 handle_api_settings_post)

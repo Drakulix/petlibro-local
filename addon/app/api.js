@@ -69,3 +69,54 @@ function checkAlerts() {
     fabBadge.style.display = "none";
   }
 }
+
+const _ALERT_LABELS = {
+  offline:      "Device offline",
+  food_low:     "Food level low",
+  water_low:    "Low water",
+  filter_due:   "Filter replacement due",
+  cleaning_due: "Cleaning overdue",
+  bowl_due:     "Bowl cleaning due",
+  housing_due:  "Housing cleaning due",
+};
+
+function openDeviceBySerial(serial) {
+  const device = _devices.find(d => d.serial === serial);
+  if (device) openDeviceModal(device);
+}
+
+function toggleAlertPanel() {
+  const panel = document.getElementById("alert-panel");
+  if (!panel) return;
+  if (panel.style.display !== "none") { panel.style.display = "none"; return; }
+
+  const rows = [];
+  for (const d of _devices) {
+    const alerts = deviceAlerts(d);
+    if (!alerts.length) continue;
+    const name = escHtml(d.name || d.serial?.slice(0, 8) || "Device");
+    for (const a of alerts) {
+      const label = escHtml(_ALERT_LABELS[a] || a);
+      const color = a === "offline" ? "var(--pl-danger)" : "var(--pl-warn, #e09a30)";
+      rows.push(`<div style="padding:8px 16px;border-bottom:1px solid var(--pl-border);cursor:pointer"
+          onclick="openDeviceBySerial('${escHtml(d.serial)}');document.getElementById('alert-panel').style.display='none'">
+        <div style="font-size:13px;font-weight:600">${name}</div>
+        <div style="font-size:12px;color:${color};margin-top:2px">${label}</div>
+      </div>`);
+    }
+  }
+  if (!rows.length) {
+    panel.innerHTML = `<div style="padding:12px 16px;font-size:13px;color:var(--pl-subtext)">No active alerts</div>`;
+  } else {
+    panel.innerHTML = rows.join("");
+  }
+  panel.style.display = "block";
+
+  const close = (e) => {
+    if (!panel.contains(e.target) && e.target.id !== "btn-bell") {
+      panel.style.display = "none";
+      document.removeEventListener("click", close, true);
+    }
+  };
+  setTimeout(() => document.addEventListener("click", close, true), 0);
+}

@@ -271,7 +271,7 @@
   .card-stats { display: flex; gap: 10px; margin-top: 8px; }
   .card-stat { display: flex; flex-direction: column; align-items: flex-start; }
   .stat-label { font-size: 10px; color: var(--pl-subtext); text-transform: uppercase; letter-spacing: .04em; }
-  .stat-value { font-size: 13px; font-weight: 600; color: var(--pl-text); }
+  .stat-value { font-size: 13px; font-weight: 600; color: var(--pl-text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 90px; }
   .stat-value.accent { color: var(--pl-accent); }
   .stat-value.danger { color: var(--pl-danger); }
   .card-intake { font-size: 11px; color: var(--pl-accent); margin-top: 5px; }
@@ -349,7 +349,8 @@
   .empty-msg { font-size: 15px; }
 
   /* ── Pet list ── */
-  .pet-list { display: flex; flex-direction: column; gap: 10px; }
+  .pet-list { display: flex; flex-direction: column; gap: 10px; max-width: 640px; margin: 0 auto; }
+  #btn-add-pet { max-width: 640px; margin-left: auto; margin-right: auto; display: flex; }
   .pet-card {
     background: var(--pl-surface);
     border: 1px solid var(--pl-border);

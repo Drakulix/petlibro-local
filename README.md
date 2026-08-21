@@ -1,14 +1,14 @@
-# Petlibro Local - Home Assistant App (Add-on)
+# Petlibro Local - Home Assistant App
 
 > ### EARLY BETA
-> This add-on is in early beta testing and is open to anyone willing to test it. You should be comfortable with Home Assistant, Mosquitto broker configuration, and local DNS overrides before attempting setup. Bug reports and feedback are very welcome — please use [GitHub Issues](https://github.com/smcneece/petlibro-local/issues).
+> This app is in early beta testing and is open to anyone willing to test it. You should be comfortable with Home Assistant, Mosquitto broker configuration, and local DNS overrides before attempting setup. Bug reports and feedback are very welcome — please use [GitHub Issues](https://github.com/smcneece/petlibro-local/issues).
 
 Keep your Petlibro fountains and feeders running entirely on your local network. Petlibro Local intercepts your devices' MQTT credentials during setup, connects them directly to your Home Assistant Mosquitto broker, and gives you desktop and mobile control panel with no Petlibro cloud dependency after that.
 
 [![GitHub release (latest by date)](https://img.shields.io/github/v/release/smcneece/petlibro-local)](https://github.com/smcneece/petlibro-local/releases)
 [![GitHub](https://img.shields.io/github/license/smcneece/petlibro-local)](LICENSE)
 
-> ⚠️ **Installation type**: Petlibro Local is a Home Assistant App (Add-on) requiring a Supervisor-managed installation (HA OS or HA Supervised). Home Assistant Core and Home Assistant Container are not supported.
+> ⚠️ **Installation type**: Petlibro Local is a Home Assistant App requiring a Supervisor-managed installation (HA OS or HA Supervised). Home Assistant Core and Home Assistant Container are not supported.
 
 > [![Sponsor](https://img.shields.io/badge/Sponsor-💖-pink)](https://github.com/sponsors/smcneece) If Petlibro Local keeps your fountain running after Petlibro changes their cloud or you just want your devices off the internet, consider sponsoring. Check out my [other HA projects](https://github.com/smcneece?tab=repositories) as well.
 >
@@ -55,12 +55,12 @@ Additional devices can be added by contributing a device type entry, the MQTT mo
 
 ## Ask Petlibro to Support Local Control
 
-This add-on exists because Petlibro devices only connect to their cloud broker out of the box. Two small firmware changes would make local control dramatically simpler — no DNS tricks, no credential capture, no internet-blocking workaround needed:
+This app exists because Petlibro devices only connect to their cloud broker out of the box. Two small firmware changes would make local control dramatically simpler — no DNS tricks, no credential capture, no internet-blocking workaround needed:
 
 1. **Configurable MQTT broker** — a single settings field to override the broker host and port. One change, massive impact.
 2. **Configurable audio base URL** — let a local broker specify where the feeder fetches sounds. Without this, feeding sounds require internet access even when everything else runs locally.
 
-If you find this add-on useful, please send a short email to **help@petlibro.com** asking for configurable MQTT broker addresses and a configurable audio URL. A polite, specific request from a real customer carries more weight than a feature thread. A ready-to-send [email template is here](docs/petlibro-feature-request.md).
+If you find this app useful, please send a short email to **help@petlibro.com** asking for configurable MQTT broker addresses and a configurable audio URL. A polite, specific request from a real customer carries more weight than a feature thread. A ready-to-send [email template is here](docs/petlibro-feature-request.md).
 
 ---
 
@@ -134,13 +134,38 @@ Two setup paths are available when adding a device.
 **Manual Setup** is for cases where you already have the MQTT username and password (for example, from MQTT Explorer during a previous capture). Enter the serial number, credentials, device type, and color variant manually.
 
 ### Device Images
-Device images are stored locally in the add-on. Image filenames follow the convention `{mqtt_model}_{color}.png` (for example, `plwf106_b.png` for a black Dockstream 2). Images with transparent backgrounds are recommended for best appearance against the dark UI. Multiple color variants per device type are supported.
+Device images are stored locally in the app. Image filenames follow the convention `{mqtt_model}_{color}.png` (for example, `plwf106_b.png` for a black Dockstream 2). Images with transparent backgrounds are recommended for best appearance against the dark UI. Multiple color variants per device type are supported.
 
 ### Pets
-Add pet profiles with name, breed, and weight. Pet profiles are stored locally and are independent of the Petlibro cloud account.
+Add pet profiles with photo, name, breed, and weight. Assign pets to one or more devices. Pet profiles are stored locally and are independent of the Petlibro cloud account.
+
+**RFID tag tracking:** On the One RFID Smart Feeder, the pet's RFID tag number is captured automatically on the first detected eating session and saved to the pet profile. Tags can also be entered manually behind the eye toggle on the pet's profile.
+
+**Recent Activity:** Each pet's profile shows a per-pet activity timeline — eating sessions confirmed by RFID (with duration), and in future releases, drinking sessions from RFID fountains and litter box visits. Device-level feeding events without RFID confirmation remain in the device log and do not appear in the pet activity view.
+
+### Notifications
+Petlibro Local sends notifications through three channels simultaneously when enabled:
+
+- **In-app alert bell** — the bell icon in the app header shows a badge for active alerts. Clicking it opens a panel listing every active alert by device name and type. Clicking a row opens that device's detail modal.
+- **HA persistent notification** — appears in the Home Assistant notification panel and survives app restarts.
+- **Email** — sent via any Home Assistant `notify` service. Configure the service name in the device's notification settings.
+- **Mobile push** — sent via any Home Assistant `notify` service (same field — use a service that targets your mobile device, such as the Home Assistant companion app notify service).
+
+**Device alerts** are configurable per device in the device's detail modal under the Notifications tab. Alert types include:
+
+| Alert | Trigger |
+|-------|---------|
+| Device offline | No MQTT message received for 5 minutes |
+| Device back online | Device reconnects after being offline |
+| Food level low | Feeder grain sensor reports low |
+| Low water | Fountain water level drops below threshold |
+| Filter replacement due | Filter days remaining reaches 3 or fewer |
+| Cleaning overdue | Fountain or bowl cleaning interval exceeded |
+
+**Pet activity notifications** fire when an RFID eating session is detected: "Zoey ate for 3m25s at Zoey's Feeder." These use the same notification channels as device alerts and can be enabled or disabled per pet.
 
 ### Settings
-- MQTT broker host, port, username, and password for the add-on's own broker connection
+- MQTT broker host, port, username, and password for the app's own broker connection
 - Connection test runs automatically on save and shows a green or red indicator
 - Language selection (English included; additional locales can be contributed)
 - All configuration is done in the Settings tab; no YAML to edit
@@ -149,8 +174,8 @@ Add pet profiles with name, breed, and weight. Pet profiles are stored locally a
 
 ## Requirements
 
-- **Home Assistant OS** or **Home Assistant Supervised**: the Supervisor is required for add-on installation and the Supervisor API access the credential capture flow depends on.
-- **Mosquitto broker add-on** (`core_mosquitto`): must be installed and running before Petlibro Local is installed. The add-on manages Mosquitto logins and stops/starts Mosquitto during credential capture.
+- **Home Assistant OS** or **Home Assistant Supervised**: the Supervisor is required for app installation and the Supervisor API access the credential capture flow depends on.
+- **Mosquitto broker app** (`core_mosquitto`): must be installed and running before Petlibro Local is installed. The app manages Mosquitto logins and stops/starts Mosquitto during credential capture.
 - **Local DNS override**: the hostname `mqtt.us.petlibro.com` must resolve to your Home Assistant IP on your local network. Pi-hole, AdGuard Home, and most router DNS overrides work. Without this, devices will continue connecting to the Petlibro cloud.
 
 ---
@@ -203,7 +228,7 @@ Once the repository is added:
 5. Click **Start**.
 6. Click **Open Web UI** or use the Petlibro Local link in the sidebar.
 
-> ⚠️ **First run**: the Settings tab opens automatically if MQTT credentials are not configured. The add-on needs its own Mosquitto account (separate from device accounts). Create a dedicated user in the Mosquitto broker configuration, enter the credentials in the Settings tab, and tap Save Settings. A green indicator confirms the connection before you proceed to add devices.
+> ⚠️ **First run**: the Settings tab opens automatically if MQTT credentials are not configured. The app needs its own Mosquitto account (separate from device accounts). Create a dedicated user in the Mosquitto broker configuration, enter the credentials in the Settings tab, and tap Save Settings. A green indicator confirms the connection before you proceed to add devices.
 
 ---
 
@@ -237,12 +262,12 @@ The most reliable solution is to **block the device from accessing the internet 
 
 1. Open Petlibro Local and tap **Add Device**.
 2. Select **Auto Setup** and read the instructions.
-3. Tap **Start Capture**. Mosquitto stops and the add-on listens on port 1883.
+3. Tap **Start Capture**. Mosquitto stops and the app listens on port 1883.
 4. Open the Petlibro app on your phone. Navigate to your device, tap the gear icon, and go to **Wi-Fi Settings**. Try **Reconnect** first. If the device does not appear within 30 seconds, try **Switch Wi-Fi** instead and walk through the Wi-Fi wizard, confirming the same network. The Petlibro app can be inconsistent about which option triggers a fresh connection; if one does not work, the other usually does.
 5. When the device reconnects, credentials are captured automatically. The serial number and device type fill in from the captured data.
 6. Pick the correct color variant, enter a display name and room, and tap **Add Device**.
 
-> ⚠️ **If other MQTT clients connect during capture** (camera systems, home automation bridges): the add-on filters by Petlibro serial number prefixes and ignores non-Petlibro clients. Capture continues until the Petlibro device connects or the 60-second timeout expires.
+> ⚠️ **If other MQTT clients connect during capture** (camera systems, home automation bridges): the app filters by Petlibro serial number prefixes and ignores non-Petlibro clients. Capture continues until the Petlibro device connects or the 60-second timeout expires.
 
 ### Manual Setup
 
@@ -256,12 +281,12 @@ The most reliable solution is to **block the device from accessing the internet 
 
 ## Home Assistant MQTT Discovery
 
-Petlibro Local automatically publishes MQTT discovery messages so Home Assistant creates entities for every device. No configuration is required — entities appear as soon as the add-on connects to Mosquitto and HA's MQTT integration is enabled.
+Petlibro Local automatically publishes MQTT discovery messages so Home Assistant creates entities for every device. No configuration is required — entities appear as soon as the app connects to Mosquitto and HA's MQTT integration is enabled.
 
 ### Requirements
 
 - The **MQTT integration** must be enabled in Home Assistant (*Settings → Devices & Services → + Add integration → MQTT*). If you already have Mosquitto set up, you likely have this.
-- Both the add-on and HA's MQTT integration must point to the same Mosquitto broker.
+- Both the app and HA's MQTT integration must point to the same Mosquitto broker.
 
 ### Feeder Entities (One RFID Smart Feeder)
 
@@ -314,13 +339,13 @@ Petlibro Local stores all device configuration, pet profiles, and settings in a 
 
 ## Configuration
 
-All configuration is in the Settings tab inside the add-on UI.
+All configuration is in the Settings tab inside the app UI.
 
 | Setting | Description |
 |---------|-------------|
-| MQTT Host | Hostname or IP of the Mosquitto broker. Use `localhost` when Mosquitto is running as a Supervisor add-on (default). |
+| MQTT Host | Hostname or IP of the Mosquitto broker. Use `localhost` when Mosquitto is running as a Supervisor app (default). |
 | MQTT Port | Broker port. Default is 1883. |
-| MQTT Username | Username for the add-on's own broker connection. This should be a dedicated account, not a device account. |
+| MQTT Username | Username for the app's own broker connection. This should be a dedicated account, not a device account. |
 | MQTT Password | Password for the above account. |
 | Language | UI language. English is included. Translations welcomed! |
 
@@ -331,7 +356,7 @@ All configuration is in the Settings tab inside the add-on UI.
 
 Pull requests are welcome. A few things to keep in mind before opening one.
 
-**Test your changes against a real Home Assistant instance.** PRs that have not been run will be closed. If the add-on does not start, that is caught immediately.
+**Test your changes against a real Home Assistant instance.** PRs that have not been run will be closed. If the app does not start, that is caught immediately.
 
 **Describe what you tested.** In your PR description, say what device you tested with, what functionality you exercised, and what you could not test due to your hardware. Vague descriptions will be asked for clarification before merge.
 
@@ -351,7 +376,7 @@ Pull requests are welcome. A few things to keep in mind before opening one.
 
 ## Acknowledgements
 
-Device data structures, API field names, and device class patterns were informed by the [ha_petlibro](https://github.com/jjjonesjr33/ha_petlibro) Home Assistant integration by [@jjjonesjr33](https://github.com/jjjonesjr33) and contributors. That project reverse-engineered the Petlibro cloud API and documents the device property model that made this local MQTT add-on possible. If you want cloud-based control alongside or instead of local control, that integration is the place to start.
+Device data structures, API field names, and device class patterns were informed by the [ha_petlibro](https://github.com/jjjonesjr33/ha_petlibro) Home Assistant integration by [@jjjonesjr33](https://github.com/jjjonesjr33) and contributors. That project reverse-engineered the Petlibro cloud API and documents the device property model that made this local MQTT app possible. If you want cloud-based control alongside or instead of local control, that integration is the place to start.
 
 ---
 
@@ -365,7 +390,7 @@ Device data structures, API field names, and device class patterns were informed
 
 </div>
 
-This project is dedicated to Kaylee, who spent twelve years being an exceptionally good dog and making every day better.
+This project is dedicated to Kaylee, the sweetest, gentlest dog. I'll miss you until the end of time.
 
 ---
 
@@ -373,7 +398,7 @@ This project is dedicated to Kaylee, who spent twelve years being an exceptional
 
 **Devices:** Petlibro, Dockstream, smart fountain, pet water fountain, pet feeder, RFID feeder  
 **Features:** local MQTT, no cloud, credential capture, water level, filter days, pump control, light control, MQTT discovery, HA entities, automations, Alexa, feed now, last fed, next meal, volume control  
-**Software:** Home Assistant, Home Assistant add-on, Supervisor, Mosquitto, MQTT, local control
+**Software:** Home Assistant, Home Assistant app, Supervisor, Mosquitto, MQTT, local control
 
 <!-- 
 SEO Keywords: petlibro local, petlibro home assistant, petlibro mqtt, petlibro no cloud,

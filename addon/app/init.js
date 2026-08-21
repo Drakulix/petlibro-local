@@ -161,7 +161,6 @@ async function detectLanguage(availableLangs) {
     document.getElementById("modal-about").classList.remove("open");
   });
   document.getElementById("btn-pet-save").addEventListener("click", savePet);
-  document.getElementById("btn-pet-delete").addEventListener("click", deletePet);
 
   // Wire pet photo button → file input → crop modal
   document.getElementById("btn-pet-photo").addEventListener("click", () => {
@@ -205,13 +204,9 @@ async function detectLanguage(availableLangs) {
     _lastDeviceRenderKey = "";
     renderDevices();
   });
-  document.getElementById("btn-bell").addEventListener("click", () => {
-    switchTab("devices");
-  });
+  document.getElementById("btn-bell").addEventListener("click", toggleAlertPanel);
   document.getElementById("fab-add-device").addEventListener("click", openAddDevice);
-  document.getElementById("fab-bell").addEventListener("click", () => {
-    switchTab("devices");
-  });
+  document.getElementById("fab-bell").addEventListener("click", toggleAlertPanel);
 
   // Backdrop click to close modals
   document.querySelectorAll(".modal-backdrop").forEach(bd => {

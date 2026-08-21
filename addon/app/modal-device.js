@@ -386,21 +386,6 @@ function buildFeederLogTab(device, entries) {
   }
   const petName = (device.pets && device.pets.length === 1) ? device.pets[0].name : null;
 
-  function fmtDuration(secs) {
-    const m = Math.floor(secs / 60), s = secs % 60;
-    return m > 0 ? `${m}m${String(s).padStart(2,"0")}s` : `${s}s`;
-  }
-  function fmtTime(ts) {
-    return new Date(ts).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
-  }
-  function fmtDate(ts) {
-    const d = new Date(ts);
-    const today = new Date(); const yesterday = new Date(Date.now() - 86400000);
-    if (d.toDateString() === today.toDateString()) return t("time.today");
-    if (d.toDateString() === yesterday.toDateString()) return t("time.yesterday");
-    return d.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" });
-  }
-
   let lastDate = null;
   const rows = entries.map(e => {
     const dateLabel = fmtDate(e.ts);
@@ -416,6 +401,8 @@ function buildFeederLogTab(device, entries) {
     } else if (e.type === "pet_eating") {
       const who = petName ? escHtml(petName) : t("pet.unnamed");
       line = `<span style="color:var(--pl-subtext)">${escHtml(fmtTime(e.ts))}</span> ${t("log.pet_ate", {name: who, duration: escHtml(fmtDuration(e.duration_secs))})}`;
+    } else if (e.type === "door_open") {
+      line = `<span style="color:var(--pl-subtext)">${escHtml(fmtTime(e.ts))}</span> Door open for ${escHtml(fmtDuration(e.duration_secs))}`;
     } else {
       line = `<span style="color:var(--pl-subtext)">${escHtml(fmtTime(e.ts))}</span> ${escHtml(e.type)}`;
     }
