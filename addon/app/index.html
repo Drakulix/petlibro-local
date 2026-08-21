@@ -1,0 +1,632 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Petlibro Local</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=VT323&display=swap" rel="stylesheet">
+<script>window.__BASE__ = "{{BASE}}"; window.__VERSION__ = "{{VERSION}}";</script>
+<link rel="stylesheet" href="app.css?v={{VERSION}}">
+</head>
+<body>
+
+<header class="header">
+  <img src="{{BASE}}/icon.png" alt="" style="width:32px;height:32px;border-radius:6px;flex-shrink:0">
+  <div class="header-title">Petlibro <span>Local</span></div>
+  <div id="header-sort-wrap">
+    <label for="device-sort-select" data-i18n="header.sort">Sort</label>
+    <select class="form-select" id="device-sort-select">
+      <option value="name" data-i18n="header.sort_name">Name</option>
+      <option value="room" data-i18n="header.sort_room">Room</option>
+    </select>
+  </div>
+  <div id="header-spacer"></div>
+  <button class="bell-btn" id="btn-bell" title="Alerts" style="display:none">
+    🔔<span class="bell-badge" id="bell-badge" style="display:none">0</span>
+  </button>
+  <button class="btn-about-header" id="btn-about">ⓘ Help / About</button>
+  <button class="btn-add" id="btn-add-device" data-i18n="header.add_device">Add Device</button>
+</header>
+
+<main class="main">
+  <div id="panel-devices" class="tab-panel active">
+    <div class="setup-banner" id="pet-setup-banner" style="display:none">
+      <span data-i18n="banner.pets">Add your pet(s) to enable feeding logs and RFID tracking.</span>
+      <button class="setup-banner-link" id="btn-banner-pets" data-i18n="banner.pets_link">Add a Pet →</button>
+    </div>
+    <div class="device-grid" id="device-grid">
+      <div class="empty-state" style="grid-column:1/-1">
+        <div class="empty-icon">🥣</div>
+        <div class="empty-msg" data-i18n="device.loading">Loading devices...</div>
+      </div>
+    </div>
+  </div>
+
+  <div id="panel-pets" class="tab-panel">
+    <div class="pet-list" id="pet-list">
+      <div class="empty-state">
+        <div class="empty-icon">🐾</div>
+        <div class="empty-msg" data-i18n="pet.loading">Loading pets...</div>
+      </div>
+    </div>
+    <button class="section-add-btn" id="btn-add-pet">
+      + <span data-i18n="pet.add">Add Pet</span>
+    </button>
+  </div>
+
+  <div id="panel-settings" class="tab-panel">
+    <div class="setup-banner" id="setup-banner">
+      <span data-i18n="banner.mqtt">Complete MQTT setup before adding devices. Enter the Mosquitto broker credentials in the MQTT tab, then tap Save &amp; Test.</span>
+      <button class="setup-banner-link" id="btn-banner-mqtt" data-i18n="banner.mqtt_link">Go to MQTT tab →</button>
+    </div>
+
+    <div class="stab-bar">
+      <button class="stab active" data-stab="general" data-i18n="settings.general_tab">General</button>
+      <button class="stab" data-stab="notifications" data-i18n="settings.notif_tab">Notifications</button>
+      <button class="stab" data-stab="mqtt" data-i18n="settings.mqtt_tab">MQTT</button>
+    </div>
+
+    <!-- General tab -->
+    <div class="stab-panel active" id="stab-general">
+      <div class="settings-section">
+        <h2 data-i18n="settings.units_heading">Units</h2>
+        <div class="form-row">
+          <label class="form-label" data-i18n="settings.units_label">Measurement System</label>
+          <select class="form-select" id="s-units">
+            <option value="auto" data-i18n="settings.units_auto">Auto (browser locale)</option>
+            <option value="metric" data-i18n="settings.units_metric">Metric (ml)</option>
+            <option value="imperial" data-i18n="settings.units_imperial">Imperial (fl oz)</option>
+          </select>
+        </div>
+      </div>
+      <div class="settings-section">
+        <h2 data-i18n="settings.tz_heading">Feeder Timezone</h2>
+        <div class="form-row">
+          <label class="form-label" data-i18n="settings.tz_label">Timezone</label>
+          <select class="form-select" id="s-feeder-tz">
+            <optgroup label="North America">
+              <option value="Pacific/Honolulu">Hawaii (HST, no DST)</option>
+              <option value="America/Anchorage">Alaska (AKST/AKDT)</option>
+              <option value="America/Los_Angeles">Pacific (PST/PDT)</option>
+              <option value="America/Denver">Mountain (MST/MDT)</option>
+              <option value="America/Phoenix">Arizona Mountain (MST, no DST)</option>
+              <option value="America/Chicago">Central (CST/CDT)</option>
+              <option value="America/New_York">Eastern (EST/EDT)</option>
+              <option value="America/Halifax">Atlantic (AST/ADT)</option>
+              <option value="America/St_Johns">Newfoundland (NST/NDT)</option>
+            </optgroup>
+            <optgroup label="South America &amp; Atlantic">
+              <option value="America/Sao_Paulo">Brazil / São Paulo (BRT/BRST)</option>
+              <option value="America/Argentina/Buenos_Aires">Argentina (ART)</option>
+            </optgroup>
+            <optgroup label="Europe">
+              <option value="UTC">UTC</option>
+              <option value="Europe/London">UK (GMT/BST)</option>
+              <option value="Europe/Paris">Central Europe (CET/CEST)</option>
+              <option value="Europe/Helsinki">Eastern Europe (EET/EEST)</option>
+              <option value="Europe/Moscow">Moscow (MSK)</option>
+            </optgroup>
+            <optgroup label="Asia &amp; Pacific">
+              <option value="Asia/Dubai">Gulf / UAE (GST)</option>
+              <option value="Asia/Kolkata">India (IST)</option>
+              <option value="Asia/Dhaka">Bangladesh (BST)</option>
+              <option value="Asia/Bangkok">SE Asia (ICT)</option>
+              <option value="Asia/Shanghai">China (CST)</option>
+              <option value="Asia/Tokyo">Japan (JST)</option>
+              <option value="Australia/Sydney">Sydney (AEST/AEDT)</option>
+              <option value="Pacific/Auckland">New Zealand (NZST/NZDT)</option>
+            </optgroup>
+          </select>
+          <p class="form-hint" data-i18n="settings.tz_hint">Daylight saving time is handled automatically. Enter schedule times in local time — the app converts to UTC for the feeder. Change takes effect after feeder reconnects.</p>
+        </div>
+      </div>
+      <div class="settings-section">
+        <h2 data-i18n="settings.language">Language</h2>
+        <div class="form-row">
+          <select class="form-select" id="s-language"></select>
+        </div>
+      </div>
+      <button class="btn-primary" id="btn-save-general">
+        <span data-i18n="settings.save">Save</span>
+        <span class="save-indicator" id="save-indicator-general" data-i18n="settings.saved">✓ Saved</span>
+      </button>
+    </div>
+
+    <!-- Notifications tab -->
+    <div class="stab-panel" id="stab-notifications">
+      <div class="settings-section">
+        <h2 data-i18n="settings.notif_heading">Notifications</h2>
+        <div class="form-row" style="display:flex;align-items:center;gap:10px;margin-bottom:14px">
+          <input type="checkbox" id="s-notify-bell" style="width:18px;height:18px;accent-color:var(--pl-accent);flex-shrink:0">
+          <div>
+            <div style="font-size:14px;font-weight:500" data-i18n="settings.ha_bell">HA Bell (Persistent Notification)</div>
+            <div class="form-hint" style="margin-top:2px" data-i18n="settings.ha_bell_hint">Posts alerts to the Home Assistant notification bell.</div>
+          </div>
+        </div>
+        <div class="form-row">
+          <label class="form-label" data-i18n="settings.email_service">Email Notify Service</label>
+          <select class="form-select" id="s-notify-email-service">
+            <option value="" data-i18n="settings.email_none">-- None --</option>
+          </select>
+          <p class="form-hint" data-i18n="settings.email_hint">Email-capable HA notify service (Gmail, SMTP, etc.). Select one to enable email alerts.</p>
+        </div>
+        <div class="form-row">
+          <label class="form-label" data-i18n="settings.email_to">Default Email Address</label>
+          <input class="form-input" id="s-notify-email-to" type="email" placeholder="you@example.com">
+          <p class="form-hint" data-i18n="settings.email_to_hint">Fallback address used when a device has no email override set.</p>
+        </div>
+        <div class="form-row">
+          <label class="form-label" data-i18n="settings.mobile_service">Default Mobile Service</label>
+          <select class="form-select" id="s-notify-mobile-service">
+            <option value="" data-i18n="settings.email_none">-- None --</option>
+          </select>
+          <p class="form-hint" data-i18n="settings.mobile_hint">Default HA mobile_app service. Used when a device has Mobile enabled but no per-device service set.</p>
+        </div>
+      </div>
+      <button class="btn-primary" id="btn-save-notifications">
+        <span data-i18n="settings.save">Save</span>
+        <span class="save-indicator" id="save-indicator-notifications" data-i18n="settings.saved">✓ Saved</span>
+      </button>
+    </div>
+
+    <!-- MQTT tab -->
+    <div class="stab-panel" id="stab-mqtt">
+      <div class="settings-section">
+        <h2 data-i18n="settings.mqtt_section">MQTT Broker</h2>
+        <div class="form-row">
+          <label class="form-label" data-i18n="settings.mqtt_host">Host</label>
+          <input class="form-input" id="s-mqtt-host" type="text" placeholder="localhost">
+        </div>
+        <div class="form-row">
+          <label class="form-label" data-i18n="settings.mqtt_port">Port</label>
+          <input class="form-input" id="s-mqtt-port" type="number" placeholder="1883">
+        </div>
+        <div class="form-row">
+          <label class="form-label" data-i18n="settings.mqtt_user">Username</label>
+          <div class="pw-wrap">
+            <input class="form-input" id="s-mqtt-user" type="password" placeholder="addon_user">
+            <button class="btn-eye" type="button" data-target="s-mqtt-user" title="Show/hide">👁</button>
+          </div>
+        </div>
+        <div class="form-row">
+          <label class="form-label" data-i18n="settings.mqtt_pass">Password</label>
+          <div class="pw-wrap">
+            <input class="form-input" id="s-mqtt-pass" type="password" placeholder="••••••••">
+            <button class="btn-eye" type="button" data-target="s-mqtt-pass" title="Show/hide password">👁</button>
+          </div>
+        </div>
+        <p class="form-hint" data-i18n="settings.mqtt_hint">The add-on connects to this broker to receive device data. Create a dedicated broker user in Mosquitto for the add-on.</p>
+      </div>
+      <button class="btn-primary" id="btn-save-mqtt">
+        <span data-i18n="settings.mqtt_save_test">Save &amp; Test</span>
+        <span class="save-indicator" id="save-indicator-mqtt" data-i18n="settings.saved">✓ Saved</span>
+      </button>
+      <div class="mqtt-status" id="mqtt-status"></div>
+    </div>
+  </div>
+</main>
+
+<!-- Mobile FABs -->
+<div class="fab-group">
+  <button class="fab fab-bell" id="fab-bell" title="Alerts" style="display:none">
+    🔔<span class="fab-bell-badge" id="fab-bell-badge" style="display:none">0</span>
+  </button>
+  <button class="fab" id="fab-add-device" title="Add Device">+</button>
+</div>
+
+<nav class="tab-bar">
+  <button class="tab-btn active" data-tab="devices">
+    <span class="tab-icon">🥣</span>
+    <span data-i18n="tab.devices">Devices</span>
+  </button>
+  <button class="tab-btn" data-tab="pets">
+    <span class="tab-icon">🐾</span>
+    <span data-i18n="tab.pets">Pets</span>
+  </button>
+  <button class="tab-btn" data-tab="settings">
+    <span class="tab-icon">⚙️</span>
+    <span data-i18n="tab.settings">Settings</span>
+  </button>
+</nav>
+
+<!-- Device detail modal -->
+<div class="modal-backdrop" id="modal-device">
+  <div class="modal" id="modal-device-inner">
+    <button class="modal-close" id="btn-close-device">✕</button>
+    <div class="detail-header" id="detail-header">
+      <div class="detail-img" id="detail-img"><span>🥣</span></div>
+      <div>
+        <div class="detail-title" id="detail-name"></div>
+        <div class="detail-room" id="detail-room"></div>
+        <div class="detail-status">
+          <span class="status-badge" id="detail-status-badge"></span>
+          <span class="rssi-badge rssi-na" id="detail-rssi" data-i18n="signal.none">No signal</span>
+          <span class="fw-badge" id="detail-fw" style="display:none"></span>
+        </div>
+      </div>
+    </div>
+    <div class="device-tabs" id="device-tabs">
+      <button class="dtab active" data-dtab="overview" data-i18n="device_tab.overview">Overview</button>
+      <button class="dtab" data-dtab="schedule" id="dtab-schedule" style="display:none" data-i18n="device_tab.schedule">Schedule</button>
+      <button class="dtab" data-dtab="maintenance" data-i18n="device_tab.maintenance">Maintenance</button>
+      <button class="dtab" data-dtab="log" data-i18n="device_tab.log">Log</button>
+      <button class="dtab" data-dtab="notifications" data-i18n="device_tab.alerts">Alerts</button>
+    </div>
+    <div id="dtab-content" style="min-height:80px"></div>
+    <div class="detail-actions">
+      <button class="btn-secondary" id="btn-detail-edit" data-i18n="device_modal.edit">Edit</button>
+      <button class="btn-danger" id="btn-detail-delete" data-i18n="device_modal.remove">Remove</button>
+    </div>
+  </div>
+</div>
+
+<!-- Edit device modal -->
+<div class="modal-backdrop" id="modal-edit-device">
+  <div class="modal">
+    <button class="modal-close" id="btn-close-edit">✕</button>
+    <div class="modal-title" data-i18n="edit_device.title">Edit Device</div>
+    <div class="form-row">
+      <label class="form-label" data-i18n="edit_device.name">Display Name</label>
+      <input class="form-input" id="e-name" type="text" placeholder="My Fountain">
+    </div>
+    <div class="form-row">
+      <label class="form-label" data-i18n="edit_device.room">Room / Location</label>
+      <select class="form-select" id="e-room"></select>
+    </div>
+    <div class="form-row">
+      <label class="form-label" data-i18n="edit_device.variant">Color / Variant</label>
+      <select class="form-select" id="e-variant"></select>
+    </div>
+    <div class="form-row">
+      <label class="form-label" data-i18n="edit_device.image">Custom Image (optional)</label>
+      <input type="file" id="e-image" accept="image/jpeg,image/png,image/webp" class="form-input" style="padding:4px">
+      <p class="form-hint" data-i18n="edit_device.image_hint">Upload a custom photo. Leave blank to use the built-in variant image.</p>
+    </div>
+    <div class="form-row" id="e-pet-section" style="display:none">
+      <label class="form-label" data-i18n="edit_device.pets">Assigned Pets</label>
+      <div id="e-pet-list" style="display:flex;flex-direction:column;gap:8px;margin-top:4px"></div>
+    </div>
+    <div id="e-eating-section" style="display:none">
+      <div class="form-row">
+        <label class="form-label" data-i18n="edit_device.eating_duration">Min. Eating Duration (seconds)</label>
+        <input class="form-input" id="e-min-eating-secs" type="number" min="10" max="600" placeholder="30">
+        <p class="form-hint" data-i18n="edit_device.eating_hint">Door must stay open at least this long to count as a feeding session. Default: 30s.</p>
+      </div>
+    </div>
+
+    <div class="form-row">
+      <label class="form-label" data-i18n="edit_device.credentials">Device Serial &amp; MQTT Credentials</label>
+      <div style="margin-bottom:6px">
+        <div class="pw-wrap">
+          <input class="form-input" id="e-cred-serial" type="password" readonly placeholder="Serial">
+          <button class="btn-eye" type="button" data-target="e-cred-serial" title="Show/hide serial">👁</button>
+        </div>
+      </div>
+      <div style="display:flex;gap:8px;margin-bottom:6px">
+        <div class="pw-wrap">
+          <input class="form-input" id="e-cred-user" type="password" readonly placeholder="Username">
+          <button class="btn-eye" type="button" data-target="e-cred-user" title="Show/hide">👁</button>
+        </div>
+        <div class="pw-wrap">
+          <input class="form-input" id="e-cred-pass" type="password" readonly placeholder="Password">
+          <button class="btn-eye" type="button" data-target="e-cred-pass" title="Show/hide">👁</button>
+        </div>
+      </div>
+      <button class="btn-secondary" id="btn-resave-creds" style="width:100%;font-size:12px" data-i18n="edit_device.resave_creds">Re-save Credentials to Mosquitto</button>
+      <p class="form-hint" data-i18n="edit_device.creds_hint">All fields are masked — safe to share screenshots.</p>
+      <p class="form-hint" id="e-cred-hint" style="display:none"></p>
+    </div>
+    <div class="modal-footer">
+      <button class="btn-secondary" id="btn-edit-cancel" data-i18n="edit_device.cancel">Cancel</button>
+      <button class="btn-primary" id="btn-edit-save" data-i18n="edit_device.save">Save Changes</button>
+    </div>
+  </div>
+</div>
+
+<!-- Add device modal -->
+<div class="modal-backdrop" id="modal-add-device">
+  <div class="modal">
+    <button class="modal-close" id="btn-close-add">✕</button>
+    <div class="modal-title" data-i18n="add_device.title">Add Device</div>
+
+    <div id="add-method-select">
+      <p class="form-hint" style="margin-bottom:14px" data-i18n="add_device.method_hint">How would you like to set up this device?</p>
+      <div class="method-cards">
+        <button class="method-card" id="btn-method-auto">
+          <div class="method-icon">🪄</div>
+          <div class="method-title" data-i18n="add_device.auto_title">Auto Setup</div>
+          <div class="method-desc" data-i18n="add_device.auto_desc">Captures credentials automatically. Recommended for most users.</div>
+        </button>
+        <button class="method-card" id="btn-method-manual">
+          <div class="method-icon">⚙️</div>
+          <div class="method-title" data-i18n="add_device.manual_title">Manual Setup</div>
+          <div class="method-desc" data-i18n="add_device.manual_desc">You already have the MQTT username and password.</div>
+        </button>
+      </div>
+    </div>
+
+    <!-- Auto flow -->
+    <div id="add-auto-flow" style="display:none">
+      <div id="auto-step-0">
+        <div class="capture-intro">
+          <p data-i18n="add_device.auto_intro">We'll stop the Mosquitto broker for up to 60 seconds while your device reconnects and hands us its credentials automatically.</p>
+          <div class="steps-list">
+            <div class="step-item" data-i18n="add_device.auto_step1">📱 Open the Petlibro app on your phone</div>
+            <div class="step-item" data-i18n="add_device.auto_step2">🔧 Tap your device → gear icon → Wi-Fi Settings → Reconnect</div>
+            <div class="step-item" data-i18n="add_device.auto_step3">✅ Walk through the Wi-Fi setup — no need to change anything, just confirm it</div>
+          </div>
+          <p class="form-hint" data-i18n="add_device.auto_hint">This forces the device to do a fresh connection so we can capture its credentials.</p>
+        </div>
+        <div class="modal-footer">
+          <button class="btn-secondary" id="btn-auto-back-intro" data-i18n="add_device.back">Back</button>
+          <button class="btn-primary" id="btn-auto-start" data-i18n="add_device.start_capture">Start Capture</button>
+        </div>
+      </div>
+      <div id="auto-step-1" style="display:none">
+        <div class="capture-waiting">
+          <div class="spinner-lg"></div>
+          <p data-i18n="add_device.waiting_stopped">Mosquitto is stopped.</p>
+          <p data-i18n="add_device.waiting_connect">Waiting for your device to connect...</p>
+          <p class="form-hint" data-i18n="add_device.waiting_hint">Open the Petlibro app and reconnect your device's Wi-Fi now.</p>
+          <div class="countdown" id="auto-countdown"></div>
+        </div>
+      </div>
+      <div id="auto-step-2" style="display:none">
+        <div class="capture-success" data-i18n="add_device.captured">✓ Credentials captured!</div>
+        <div id="a-login-warn" style="display:none;color:var(--pl-danger);font-size:12px;margin-bottom:8px" data-i18n="add_device.cred_warn">⚠ Could not save credentials to Mosquitto automatically. You may need to add them manually in the Mosquitto broker settings after adding this device.</div>
+        <div class="form-row">
+          <label class="form-label" data-i18n="add_device.serial">Serial Number</label>
+          <div class="pw-wrap">
+            <input class="form-input" id="a-serial" type="text" autocapitalize="characters" placeholder="WF03XXXXXXXXXXXX">
+            <button class="btn-eye" type="button" data-target="a-serial" title="Show/hide">👁</button>
+          </div>
+        </div>
+        <div class="form-row">
+          <label class="form-label" data-i18n="add_device.mqtt_user">MQTT Username</label>
+          <div class="pw-wrap">
+            <input class="form-input" id="a-cred-user" type="password" readonly>
+            <button class="btn-eye" type="button" data-target="a-cred-user" title="Show/hide">👁</button>
+          </div>
+        </div>
+        <div class="form-row">
+          <label class="form-label" data-i18n="add_device.mqtt_pass">MQTT Password</label>
+          <div class="pw-wrap">
+            <input class="form-input" id="a-cred-pass" type="password" readonly>
+            <button class="btn-eye" type="button" data-target="a-cred-pass" title="Show/hide">👁</button>
+          </div>
+        </div>
+        <div class="form-row">
+          <label class="form-label" data-i18n="add_device.device_type">Device Type</label>
+          <select class="form-select" id="a-device-type">
+            <option value="dockstream2" data-model="WF03">Dockstream 2 Smart Fountain</option>
+            <option value="dockstream2_cordless" data-model="WF04">Dockstream 2 Cordless Fountain</option>
+            <option value="one_rfid" data-model="AF06">One RFID Smart Feeder</option>
+          </select>
+        </div>
+        <div class="form-row">
+          <label class="form-label" data-i18n="add_device.variant">Color / Variant</label>
+          <select class="form-select" id="a-variant"></select>
+        </div>
+        <div class="form-row">
+          <label class="form-label" data-i18n="add_device.name">Display Name</label>
+          <input class="form-input" id="a-name" type="text" placeholder="My Fountain">
+        </div>
+        <div class="form-row">
+          <label class="form-label" data-i18n="add_device.room">Room / Location</label>
+          <select class="form-select" id="a-room"></select>
+        </div>
+        <div class="form-row" id="a-pet-section" style="display:none">
+          <label class="form-label"><span data-i18n="add_device.pets">Assigned Pets</span> <span id="a-pet-optional" style="font-weight:400;color:var(--pl-subtext)">(optional)</span></label>
+          <div id="a-pet-list" style="display:flex;flex-direction:column;gap:8px;margin-top:4px"></div>
+        </div>
+        <div class="modal-footer">
+          <button class="btn-primary" id="btn-auto-finish" data-i18n="add_device.finish">Add Device</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Manual flow -->
+    <div id="add-manual-flow" style="display:none">
+      <div class="wizard-steps">
+        <div class="wizard-step active" data-mstep="0"></div>
+        <div class="wizard-step" data-mstep="1"></div>
+        <div class="wizard-step" data-mstep="2"></div>
+      </div>
+      <div id="wizard-step-0">
+        <div class="form-row">
+          <label class="form-label" data-i18n="add_device.device_type">Device Type</label>
+          <select class="form-select" id="w-device-type">
+            <option value="" data-i18n="add_device.select_type">Select device type...</option>
+            <option value="dockstream2" data-model="WF03">Dockstream 2 Smart Fountain</option>
+            <option value="dockstream2_cordless" data-model="WF04">Dockstream 2 Cordless Fountain</option>
+            <option value="one_rfid" data-model="AF06">One RFID Smart Feeder</option>
+          </select>
+        </div>
+        <div class="form-row">
+          <label class="form-label" data-i18n="add_device.variant">Color / Variant</label>
+          <select class="form-select" id="w-variant"></select>
+        </div>
+      </div>
+      <div id="wizard-step-1" style="display:none">
+        <div class="form-row">
+          <label class="form-label" data-i18n="add_device.serial">Serial Number</label>
+          <div class="pw-wrap">
+            <input class="form-input" id="w-serial" type="text" placeholder="WF03XXXXXXXXXXXX" autocapitalize="characters">
+            <button class="btn-eye" type="button" data-target="w-serial" title="Show/hide">👁</button>
+          </div>
+          <p class="form-hint" data-i18n="add_device.serial_hint">Found on the label on the bottom of the device</p>
+        </div>
+        <div class="form-row">
+          <label class="form-label" data-i18n="add_device.mqtt_user">MQTT Username</label>
+          <div class="pw-wrap">
+            <input class="form-input" id="w-mqtt-user" type="text" autocapitalize="characters" autocorrect="off" spellcheck="false">
+            <button class="btn-eye" type="button" data-target="w-mqtt-user" title="Show/hide">👁</button>
+          </div>
+        </div>
+        <div class="form-row">
+          <label class="form-label" data-i18n="add_device.mqtt_pass">MQTT Password</label>
+          <div class="pw-wrap">
+            <input class="form-input" id="w-mqtt-pass" type="password" autocorrect="off" spellcheck="false">
+            <button class="btn-eye" type="button" data-target="w-mqtt-pass" title="Show/hide">👁</button>
+          </div>
+        </div>
+      </div>
+      <div id="wizard-step-2" style="display:none">
+        <div class="form-row">
+          <label class="form-label" data-i18n="add_device.name">Display Name</label>
+          <input class="form-input" id="w-name" type="text" placeholder="My Fountain">
+        </div>
+        <div class="form-row">
+          <label class="form-label" data-i18n="add_device.room">Room / Location</label>
+          <select class="form-select" id="w-room"></select>
+        </div>
+        <div class="form-row" id="w-pet-section" style="display:none">
+          <label class="form-label"><span data-i18n="add_device.pets">Assigned Pets</span> <span id="w-pet-optional" style="font-weight:400;color:var(--pl-subtext)">(optional)</span></label>
+          <div id="w-pet-list" style="display:flex;flex-direction:column;gap:8px;margin-top:4px"></div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn-secondary" id="btn-wizard-back" data-i18n="add_device.back">Back</button>
+        <button class="btn-primary" id="btn-wizard-next" data-i18n="add_device.next">Next</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Pet modal -->
+<div class="modal-backdrop" id="modal-pet">
+  <div class="modal">
+    <button class="modal-close" id="btn-close-pet">✕</button>
+    <div class="modal-title" id="pet-modal-title">Pet</div>
+    <div style="display:flex;align-items:flex-start;gap:14px;margin-bottom:4px">
+      <button class="pet-photo-btn" id="btn-pet-photo" title="Change photo">
+        <span id="pet-photo-placeholder">📷</span>
+        <img id="pet-photo-preview" src="" alt="" style="display:none">
+      </button>
+      <div style="flex:1;display:flex;flex-direction:column;gap:8px">
+        <div class="form-row" style="margin:0">
+          <label class="form-label" data-i18n="pet.name_label">Pet Name</label>
+          <input class="form-input" id="p-name" type="text" placeholder="Fluffy">
+        </div>
+        <div class="form-row" style="margin:0">
+          <label class="form-label" data-i18n="pet.breed_label">Breed</label>
+          <input class="form-input" id="p-breed" type="text" placeholder="Maine Coon">
+        </div>
+      </div>
+    </div>
+    <input type="file" id="p-photo-file" accept="image/jpeg,image/png,image/webp" style="display:none">
+    <div class="form-row">
+      <label class="form-label" id="p-weight-label">Weight (kg)</label>
+      <input class="form-input" id="p-weight" type="number" step="0.1" placeholder="4.5">
+    </div>
+    <div class="form-row" id="p-device-section" style="display:none">
+      <label class="form-label" data-i18n="pet.assigned_devices">Assigned to Devices</label>
+      <div id="p-device-list" style="display:flex;flex-direction:column;gap:8px;margin-top:4px"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn-danger" id="btn-pet-delete" style="display:none" data-i18n="pet.delete">Delete</button>
+      <button class="btn-primary" id="btn-pet-save" data-i18n="pet.save">Save</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-backdrop" id="modal-about">
+  <div class="modal">
+    <button class="modal-close" id="btn-close-about">✕</button>
+    <div class="modal-title" data-i18n="about.title">Help / About</div>
+    <table style="width:100%;border-collapse:collapse;margin-bottom:20px">
+      <tr>
+        <td style="padding:6px 0;color:var(--pl-subtext);font-size:14px;width:45%" data-i18n="about.version">Version</td>
+        <td id="about-version" style="padding:6px 0;font-size:14px;font-weight:600">—</td>
+      </tr>
+      <tr>
+        <td style="padding:6px 0;color:var(--pl-subtext);font-size:14px" data-i18n="about.ha_version">HA Version</td>
+        <td id="about-ha-version" style="padding:6px 0;font-size:14px;font-weight:600">—</td>
+      </tr>
+    </table>
+    <div style="display:flex;flex-direction:column;gap:12px">
+      <a class="about-link" href="https://github.com/smcneece/petlibro-local" target="_blank" rel="noopener" data-i18n="about.github">GitHub Repository</a>
+      <a class="about-link" href="https://github.com/smcneece/petlibro-local#readme" target="_blank" rel="noopener" data-i18n="about.readme">README / Documentation</a>
+      <a class="about-link" href="https://github.com/smcneece/petlibro-local/blob/main/CHANGELOG.md" target="_blank" rel="noopener" data-i18n="about.changelog">Changelog</a>
+      <a class="about-link" href="https://github.com/smcneece/petlibro-local/issues/new" target="_blank" rel="noopener" data-i18n="about.report_issue">Report an Issue</a>
+      <a class="about-link" href="https://github.com/smcneece/petlibro-local/issues/new?labels=enhancement" target="_blank" rel="noopener" data-i18n="about.request_feature">Request a Feature</a>
+      <a class="about-link about-sponsor" href="https://github.com/sponsors/smcneece" target="_blank" rel="noopener" data-i18n="about.sponsor">♥ Sponsor this project</a>
+    </div>
+  </div>
+</div>
+
+<!-- Icon editor modal -->
+<div class="modal-overlay" id="icon-editor-overlay">
+  <div class="modal" style="max-width:680px;width:calc(100% - 32px)">
+    <div class="modal-header">
+      <span class="modal-title">Icon Editor</span>
+      <button onclick="closeIconEditor()" style="background:none;border:none;font-size:22px;cursor:pointer;color:var(--pl-subtext);line-height:1;padding:4px">&#x2715;</button>
+    </div>
+    <div style="display:flex;gap:16px;flex-wrap:wrap">
+
+      <!-- Saved icon list -->
+      <div style="width:148px;flex-shrink:0">
+        <div style="font-size:12px;font-weight:600;color:var(--pl-subtext);text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px">Saved Icons</div>
+        <div id="ie-list"></div>
+        <p style="font-size:11px;color:var(--pl-subtext);margin-top:8px;line-height:1.4">Max 12 icons. Oldest removed when full.</p>
+      </div>
+
+      <!-- Editor area -->
+      <div style="flex:1;min-width:220px">
+        <div style="font-size:12px;font-weight:600;color:var(--pl-subtext);text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px">Draw (5 &times; 12)</div>
+        <div id="ie-grid" style="user-select:none"></div>
+
+        <div style="margin-top:12px">
+          <div style="font-size:12px;font-weight:600;color:var(--pl-subtext);text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px">Display preview (26-wide)</div>
+          <div id="ie-preview" style="background:var(--pl-surface-2,#1a1a2e);padding:8px;border-radius:6px;display:inline-block"></div>
+        </div>
+
+        <div style="margin-top:14px">
+          <input class="form-input" type="text" id="ie-name" placeholder="Icon name" maxlength="32" style="margin-bottom:10px">
+          <div style="display:flex;gap:8px;flex-wrap:wrap">
+            <button class="btn-primary" id="ie-btn-send" style="flex:1">Send to Feeder</button>
+            <button class="btn-secondary" id="ie-btn-save" style="flex:1">Save</button>
+            <button class="btn-secondary" id="ie-btn-clear">Clear</button>
+            <button class="btn-secondary" id="ie-delete" style="color:var(--pl-danger)" disabled>Delete</button>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<!-- Crop modal -->
+<div class="crop-modal-backdrop" id="modal-crop">
+  <div class="crop-modal">
+    <div style="font-size:15px;font-weight:600;margin-bottom:4px" data-i18n="crop.title">Crop Photo</div>
+    <p style="font-size:12px;color:var(--pl-subtext);margin-bottom:8px" data-i18n="crop.hint">Drag to reposition. Use the slider to zoom.</p>
+    <div class="crop-canvas-wrap" id="crop-canvas-wrap">
+      <canvas id="crop-canvas" width="280" height="280"></canvas>
+      <div class="crop-circle-hole"></div>
+    </div>
+    <div class="crop-zoom-row">
+      <label data-i18n="crop.zoom">Zoom</label>
+      <input type="range" id="crop-zoom" min="1" max="4" step="0.01" value="1">
+    </div>
+    <div class="crop-actions">
+      <button class="btn-secondary" id="btn-crop-cancel" data-i18n="crop.cancel">Cancel</button>
+      <button class="btn-primary" id="btn-crop-apply" data-i18n="crop.apply">Use Photo</button>
+    </div>
+  </div>
+</div>
+
+<script src="util.js?v={{VERSION}}"></script>
+<script src="api.js?v={{VERSION}}"></script>
+<script src="render.js?v={{VERSION}}"></script>
+<script src="modal-device.js?v={{VERSION}}"></script>
+<script src="toggles.js?v={{VERSION}}"></script>
+<script src="modal-edit.js?v={{VERSION}}"></script>
+<script src="modal-add.js?v={{VERSION}}"></script>
+<script src="modal-icon-editor.js?v={{VERSION}}"></script>
+<script src="pets.js?v={{VERSION}}"></script>
+<script src="settings.js?v={{VERSION}}"></script>
+<script src="init.js?v={{VERSION}}"></script>
+</body>
+</html>

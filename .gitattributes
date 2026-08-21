@@ -1,0 +1,3 @@
+# Force LF line endings for all text files (add-on runs on Linux)
+* text=auto eol=lf
+*.bat text eol=crlf
