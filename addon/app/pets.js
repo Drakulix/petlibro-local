@@ -111,6 +111,10 @@ function openPetModal(pet) {
   document.getElementById("p-notify-email").checked  = pet ? (pet.notify_email  ?? true)  : true;
   document.getElementById("p-notify-mobile").checked = pet ? (pet.notify_mobile ?? false) : false;
 
+  // Hasn't eaten alert
+  document.getElementById("p-no-eat-enabled").checked = pet ? (pet.no_eat_alert_enabled ?? false) : false;
+  document.getElementById("p-no-eat-hours").value     = pet ? (pet.no_eat_alert_hours   ?? 12)    : 12;
+
   // RFID tag -- show section only if pet already has a tag or is assigned to an RFID feeder
   const rfidInput   = document.getElementById("p-rfid-tag");
   const rfidEye     = document.getElementById("btn-rfid-eye");
@@ -172,9 +176,11 @@ async function savePet() {
     breed:         document.getElementById("p-breed").value.trim(),
     weight_kg:     weight_kg != null ? parseFloat(weight_kg.toFixed(3)) : null,
     rfid_tag:      rfidVal || null,
-    notify_bell:   document.getElementById("p-notify-bell").checked,
-    notify_email:  document.getElementById("p-notify-email").checked,
-    notify_mobile: document.getElementById("p-notify-mobile").checked,
+    notify_bell:          document.getElementById("p-notify-bell").checked,
+    notify_email:         document.getElementById("p-notify-email").checked,
+    notify_mobile:        document.getElementById("p-notify-mobile").checked,
+    no_eat_alert_enabled: document.getElementById("p-no-eat-enabled").checked,
+    no_eat_alert_hours:   parseInt(document.getElementById("p-no-eat-hours").value) || 12,
   };
   try {
     let savedPet;

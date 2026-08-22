@@ -50,13 +50,13 @@ def compute_alerts(state: dict, cfg: dict, online: bool) -> set:
     return alerts
 
 
-def track_intake(old_state: dict, new_state: dict) -> float | None:
+def track_intake(old_state: dict, new_state: dict, min_grams: float = 5) -> float | None:
     """Return grams consumed if a plausible drinking event occurred, else None."""
     old_weight = old_state.get("currentWeight")
     new_weight = new_state.get("currentWeight")
     if old_weight is None or new_weight is None:
         return None
     drop = old_weight - new_weight
-    if 10 <= drop <= 800:
+    if min_grams <= drop <= 800:
         return drop
     return None

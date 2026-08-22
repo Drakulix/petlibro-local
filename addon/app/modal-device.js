@@ -51,6 +51,10 @@ function renderDeviceTab(tabName) {
       api("GET", `/api/devices/${_currentDevice.serial}/feeder-log`)
         .then(log => { content.innerHTML = buildFeederLogTab(_currentDevice, log); })
         .catch(() => { content.innerHTML = `<p style="color:var(--pl-danger);padding:16px 0">${t("device_modal.load_failed_log")}</p>`; });
+    } else if (_currentDevice.device_type?.startsWith("dockstream")) {
+      api("GET", `/api/devices/${_currentDevice.serial}/fountain-log`)
+        .then(log => { content.innerHTML = buildFountainLogTab(_currentDevice, log); })
+        .catch(() => { content.innerHTML = `<p style="color:var(--pl-danger);padding:16px 0">${t("device_modal.load_failed_log")}</p>`; });
     } else {
       api("GET", `/api/devices/${_currentDevice.serial}/intake?days=7`)
         .then(history => { content.innerHTML = buildLogTab(_currentDevice, history); })
@@ -212,16 +216,16 @@ function buildOverviewTab(device) {
       <button class="btn-secondary" id="btn-save-feeder-settings" style="width:100%;margin-top:10px">${t("overview.save_settings")}</button>
     </div>
     <div style="margin-top:16px">
-      <div class="tab-section-heading">LED Display</div>
+      <div class="tab-section-heading">${t("overview.led_display")}</div>
       <div class="form-row">
-        <label class="form-label">Scrolling Text</label>
+        <label class="form-label">${t("overview.scrolling_text")}</label>
         <div style="display:flex;gap:8px">
           <input class="form-input" id="feeder-display-text" type="text" maxlength="20" placeholder="e.g. MOCHI" value="${escHtml(device.display_text || "")}" oninput="this.value=this.value.toUpperCase()">
           <button class="btn-secondary" id="btn-send-display-text" style="flex-shrink:0">Send</button>
         </div>
-        <p class="form-hint">Text scrolls across the feeder display. Uppercase A-Z and 0-9, max 20 characters.</p>
+        <p class="form-hint">${t("overview.display_text_hint")}</p>
       </div>
-      <button class="btn-secondary" id="btn-open-icon-editor" style="width:100%;margin-top:4px">Custom Icon Editor &rarr;</button>
+      <button class="btn-secondary" id="btn-open-icon-editor" style="width:100%;margin-top:4px">${t("overview.icon_editor_btn")}</button>
     </div>
     ${(!device.pets?.length) ? `
     <div style="background:rgba(224,168,85,.12);border:1px solid rgba(224,168,85,.5);color:var(--pl-warning);border-radius:var(--pl-radius-sm);padding:10px 12px;font-size:13px;margin-top:14px;line-height:1.5">
@@ -342,7 +346,15 @@ function buildMaintenanceTab(device) {
     <label class="form-label">${t("maint.low_water_threshold", {unit: escHtml(lowWaterUnit)})}</label>
     <input class="form-input" id="maint-low-water" type="number" min="0" value="${lowWaterDisplay}">
   </div>
-  <button class="btn-secondary" id="btn-save-low-water" style="width:100%">${t("maint.save_threshold")}</button>`;
+  <button class="btn-secondary" id="btn-save-low-water" style="width:100%">${t("maint.save_threshold")}</button>
+
+  <div class="tab-section-heading">${t("maint.drink_detection")}</div>
+  <div class="form-row">
+    <label class="form-label">${t("maint.min_drink_label")}</label>
+    <input class="form-input" id="maint-min-drink" type="number" min="1" max="200" value="${device.min_drink_grams ?? 5}">
+  </div>
+  <p class="form-hint">${t("maint.min_drink_hint")}</p>
+  <button class="btn-secondary" id="btn-save-min-drink" style="width:100%">${t("maint.save_threshold")}</button>`;
 }
 
 // ── Log tab ───────────────────────────────────────────────────────────────
@@ -402,7 +414,36 @@ function buildFeederLogTab(device, entries) {
       const who = petName ? escHtml(petName) : t("pet.unnamed");
       line = `<span style="color:var(--pl-subtext)">${escHtml(fmtTime(e.ts))}</span> ${t("log.pet_ate", {name: who, duration: escHtml(fmtDuration(e.duration_secs))})}`;
     } else if (e.type === "door_open") {
-      line = `<span style="color:var(--pl-subtext)">${escHtml(fmtTime(e.ts))}</span> Door open for ${escHtml(fmtDuration(e.duration_secs))}`;
+      line = `<span style="color:var(--pl-subtext)">${escHtml(fmtTime(e.ts))}</span> ${t("log.door_open", {duration: escHtml(fmtDuration(e.duration_secs))})}`;
+    } else {
+      line = `<span style="color:var(--pl-subtext)">${escHtml(fmtTime(e.ts))}</span> ${escHtml(e.type)}`;
+    }
+    return `${dateHeader}<div style="padding:6px 0;border-bottom:1px solid var(--pl-border);font-size:0.9rem">${line}</div>`;
+  }).join("");
+
+  return `<div class="tab-section-heading">${t("log.activity_heading")}</div>${rows}`;
+}
+
+// ── Fountain log tab ──────────────────────────────────────────────────────
+function buildFountainLogTab(device, entries) {
+  if (!entries || !entries.length) {
+    return `<div style="text-align:center;padding:32px 0">
+      <div style="font-size:40px;margin-bottom:8px">💧</div>
+      <p class="form-hint">${t("log.no_activity")}</p>
+    </div>`;
+  }
+
+  let lastDate = null;
+  const rows = entries.map(e => {
+    const dateLabel = fmtDate(e.ts);
+    const dateHeader = dateLabel !== lastDate
+      ? `<div class="tab-section-heading" style="margin-top:${lastDate ? "16px" : "0"}">${escHtml(dateLabel)}</div>`
+      : "";
+    lastDate = dateLabel;
+
+    let line;
+    if (e.type === "drink") {
+      line = `<span style="color:var(--pl-subtext)">${escHtml(fmtTime(e.ts))}</span> ${t("log.drink", {volume: escHtml(fmtWater(e.grams))})}`;
     } else {
       line = `<span style="color:var(--pl-subtext)">${escHtml(fmtTime(e.ts))}</span> ${escHtml(e.type)}`;
     }
@@ -645,7 +686,7 @@ function buildNotificationsTab(device) {
       ? `<option value="${escHtml(device.notify_mobile_service)}" selected>${escHtml(device.notify_mobile_service)}</option>` : "");
 
   return `
-  <div class="tab-section-heading">Alert Conditions</div>
+  <div class="tab-section-heading">${t("notif.alert_conditions")}</div>
   <div class="toggle-list">
     ${checks.map(c => `<div class="toggle-row">
       <span class="toggle-label">${c.label}</span>
@@ -653,30 +694,30 @@ function buildNotificationsTab(device) {
     </div>`).join("")}
   </div>
 
-  <div class="tab-section-heading" style="margin-top:18px">Notification Channels</div>
+  <div class="tab-section-heading" style="margin-top:18px">${t("notif.channels")}</div>
   <div class="toggle-list" style="margin-bottom:14px">
     <div class="toggle-row">
-      <span class="toggle-label">HA Bell</span>
+      <span class="toggle-label">${t("notif.ha_bell")}</span>
       <input type="checkbox" class="notif-check" id="nchan-bell" ${device.notify_bell !== false ? "checked" : ""}>
     </div>
     <div class="toggle-row">
-      <span class="toggle-label">Email</span>
+      <span class="toggle-label">${t("notif.email")}</span>
       <input type="checkbox" class="notif-check" id="nchan-email" ${device.notify_email !== false ? "checked" : ""}>
     </div>
     <div class="toggle-row">
-      <span class="toggle-label">Mobile</span>
+      <span class="toggle-label">${t("notif.mobile")}</span>
       <input type="checkbox" class="notif-check" id="nchan-mobile" ${device.notify_mobile ? "checked" : ""}>
     </div>
   </div>
   <div id="nchan-email-section" style="${device.notify_email !== false ? "" : "display:none"}">
     <div class="form-row">
-      <label class="form-label">Email Address Override</label>
-      <input class="form-input" id="nchan-email-addr" type="email" placeholder="Leave blank to use default from Settings" value="${escHtml(device.notify_email_address || "")}">
+      <label class="form-label">${t("notif.email_override")}</label>
+      <input class="form-input" id="nchan-email-addr" type="email" placeholder="${t("notif.email_placeholder")}" value="${escHtml(device.notify_email_address || "")}">
     </div>
   </div>
   <div id="nchan-mobile-section" style="${device.notify_mobile ? "" : "display:none"}">
     <div class="form-row">
-      <label class="form-label">Mobile App Service</label>
+      <label class="form-label">${t("notif.mobile_service")}</label>
       <select class="form-select" id="nchan-mobile-svc">${devMobileOptions}</select>
     </div>
   </div>
@@ -977,6 +1018,16 @@ function wireDeviceTabHandlers(tabName) {
         _patchDevice(d.serial, { low_water_grams: grams, lowWater: grams });
         saveLowWater.textContent = t("overview.saved");
         setTimeout(() => { saveLowWater.textContent = t("maint.save_threshold"); }, 1500);
+      };
+    }
+    const saveMinDrink = document.getElementById("btn-save-min-drink");
+    if (saveMinDrink) {
+      saveMinDrink.onclick = async () => {
+        const val = Math.max(1, parseInt(document.getElementById("maint-min-drink").value) || 5);
+        await api("POST", `/api/devices/${d.serial}`, { min_drink_grams: val });
+        _patchDevice(d.serial, { min_drink_grams: val });
+        saveMinDrink.textContent = t("overview.saved");
+        setTimeout(() => { saveMinDrink.textContent = t("maint.save_threshold"); }, 1500);
       };
     }
   }

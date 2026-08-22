@@ -18,7 +18,7 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name
 logging.getLogger("aiohttp.access").setLevel(logging.WARNING)
 _LOGGER = logging.getLogger(__name__)
 
-VERSION = "2026.08.2"
+VERSION = "2026.08.3"
 
 # Credential capture state
 _capture_state: dict = {"status": "idle", "result": {}}
@@ -265,6 +265,13 @@ async def handle_api_icons_get(request):
     return web.json_response(storage.get_custom_icons())
 
 
+def _republish_feeder_icons():
+    """Re-announce HA Discovery for all feeder devices so the icon select options stay in sync."""
+    for serial, cfg in storage.get_devices().items():
+        if cfg.get("device_type") == "one_rfid":
+            asyncio.ensure_future(devices.republish_ha_discovery(serial))
+
+
 async def handle_api_icons_post(request):
     try:
         body = await request.json()
@@ -273,6 +280,7 @@ async def handle_api_icons_post(request):
         if not isinstance(rows, list) or len(rows) != 5:
             return web.Response(status=400, text="rows must be a list of 5 integers")
         icon_id = storage.save_custom_icon(name, rows)
+        _republish_feeder_icons()
         return web.json_response({"id": icon_id})
     except Exception:
         _LOGGER.exception("Failed to save icon")
@@ -286,6 +294,8 @@ async def handle_api_icon_put(request):
         name = str(body.get("name", "Icon"))[:32]
         rows = body.get("rows", [0, 0, 0, 0, 0])
         ok = storage.update_custom_icon(icon_id, name, rows)
+        if ok:
+            _republish_feeder_icons()
         return web.json_response({"ok": ok})
     except Exception:
         _LOGGER.exception("Failed to update icon")
@@ -295,6 +305,8 @@ async def handle_api_icon_put(request):
 async def handle_api_icon_delete(request):
     icon_id = int(request.match_info["id"])
     ok = storage.delete_custom_icon(icon_id)
+    if ok:
+        _republish_feeder_icons()
     return web.json_response({"ok": ok})
 
 
@@ -474,6 +486,12 @@ async def handle_api_feeder_log(request):
     return web.json_response(storage.get_feeder_log(serial, limit))
 
 
+async def handle_api_fountain_log(request):
+    serial = request.match_info["serial"]
+    limit = min(int(request.query.get("limit", 60)), 200)
+    return web.json_response(storage.get_fountain_log(serial, limit))
+
+
 async def handle_api_pet_log(request):
     """Return feeder activity events for a specific pet, newest first."""
     pet_id = request.match_info["pet_id"]
@@ -549,6 +567,7 @@ async def handle_api_feeding_plans_post(request):
             return web.Response(status=400, text="Expected a JSON array")
         storage.save_device_feeding_plans(serial, plans)
         ok = await devices.send_feeding_plans(serial, plans)
+        asyncio.ensure_future(devices.republish_ha_discovery(serial))
         return web.json_response({"status": "ok", "mqtt": ok})
     except Exception:
         _LOGGER.exception("Feeding plans update failed for %s...", serial[:6])
@@ -633,6 +652,7 @@ def main():
     app.router.add_post("/api/devices/{serial}/resave-creds", handle_api_device_resave_creds)
     app.router.add_get("/api/devices/{serial}/intake",     handle_api_device_intake)
     app.router.add_get("/api/devices/{serial}/feeder-log",     handle_api_feeder_log)
+    app.router.add_get("/api/devices/{serial}/fountain-log",   handle_api_fountain_log)
     app.router.add_get("/api/devices/{serial}/feeding-plans",  handle_api_feeding_plans_get)
     app.router.add_post("/api/devices/{serial}/feeding-plans", handle_api_feeding_plans_post)
     app.router.add_post("/api/devices/{serial}/image",         handle_api_device_image_upload)

@@ -214,10 +214,7 @@ function nextMealLabel(plans) {
     for (const plan of candidates) {
       const [h, m] = plan.localTime.split(":").map(Number);
       if (off === 0 && h * 60 + m <= nowMin) continue;
-      const timeStr = _fmt12h(h, m);
-      if (off === 0) return timeStr;
-      if (off === 1) return `${t("time.tomorrow")} ${timeStr}`;
-      return `${t(_WDAY_KEYS[day.getDay()])} ${timeStr}`;
+      return _fmt12h(h, m);
     }
   }
   return null;

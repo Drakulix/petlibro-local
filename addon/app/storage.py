@@ -37,7 +37,7 @@ ALLOWED_DEVICE_FIELDS = {
     "name", "room", "device_type", "model", "image_url", "variant",
     "mqtt_user", "mqtt_pass", "pet_ids",
     "filter_life_days", "last_cleaned_ts", "cleaning_interval_days",
-    "low_water_grams", "notifications",
+    "low_water_grams", "min_drink_grams", "notifications",
     "notify_bell", "notify_email", "notify_email_address",
     "notify_mobile", "notify_mobile_service",
     "desiccant_life_days", "last_desiccant_ts",
@@ -48,11 +48,13 @@ ALLOWED_DEVICE_FIELDS = {
     "display_icon_name",
     "min_eating_secs",
     "last_fed_ts",
+    "last_eating_secs",
 }
 
 ALLOWED_PET_FIELDS = {
     "name", "breed", "weight_kg", "image_url", "device_serials", "rfid_tag",
     "notify_bell", "notify_email", "notify_mobile",
+    "no_eat_alert_enabled", "no_eat_alert_hours",
 }
 
 _DEVICE_DEFAULTS = {
@@ -69,6 +71,7 @@ _DEVICE_DEFAULTS = {
     "last_cleaned_ts": None,
     "cleaning_interval_days": 14,
     "low_water_grams": 500,
+    "min_drink_grams": 5,
     "desiccant_life_days": 14,
     "last_desiccant_ts": None,
     "last_bowl_cleaned_ts": None,
@@ -112,11 +115,17 @@ def _load() -> dict:
 
 
 def _save(data: dict):
+    tmp = DATA_FILE + ".tmp"
     try:
-        with open(DATA_FILE, "w") as f:
+        with open(tmp, "w") as f:
             json.dump(data, f, indent=2)
+        os.replace(tmp, DATA_FILE)
     except Exception:
         _LOGGER.exception("Failed to save data file")
+        try:
+            os.remove(tmp)
+        except OSError:
+            pass
 
 
 def get_settings() -> dict:
@@ -161,6 +170,8 @@ def delete_device(serial: str):
     data = _load()
     data.get("devices", {}).pop(serial, None)
     data.get("intake", {}).pop(serial, None)
+    data.get("_feeder_log", {}).pop(serial, None)
+    data.get("_fountain_log", {}).pop(serial, None)
     _save(data)
 
 
@@ -245,6 +256,27 @@ def log_feeder_event(serial: str, event_type: str, portions: int = 0, extra: dic
 def get_feeder_log(serial: str, limit: int = 60) -> list:
     """Return feeder events newest-first."""
     entries = _load().get("_feeder_log", {}).get(serial, [])
+    return list(reversed(entries[-limit:]))
+
+
+def log_fountain_event(serial: str, event_type: str, grams: float = 0, extra: dict | None = None):
+    """Append a timestamped fountain event. event_type: 'drink'."""
+    import time as _time
+    now_ms = int(_time.time() * 1000)
+    entry = {"ts": now_ms, "type": event_type, "grams": round(grams, 1)}
+    if extra:
+        entry.update(extra)
+    data = _load()
+    log = data.setdefault("_fountain_log", {}).setdefault(serial, [])
+    log.append(entry)
+    if len(log) > 500:
+        data["_fountain_log"][serial] = log[-500:]
+    _save(data)
+
+
+def get_fountain_log(serial: str, limit: int = 60) -> list:
+    """Return fountain events newest-first."""
+    entries = _load().get("_fountain_log", {}).get(serial, [])
     return list(reversed(entries[-limit:]))
 
 

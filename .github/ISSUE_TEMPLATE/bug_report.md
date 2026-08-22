@@ -6,6 +6,8 @@ labels: bug
 assignees: ''
 ---
 
+**Before reporting:** Check the [live changelog issue](https://github.com/smcneece/petlibro-local/issues?q=label%3Achangelog) — it lists bugs already being tracked and fixes already merged.
+
 **What happened?**
 A clear description of the bug.
 

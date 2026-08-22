@@ -180,6 +180,15 @@ def _entity_configs(serial: str, cfg: dict, state: dict, extra_icon_names: list[
             "device_class": "timestamp",
         })))
 
+        entities.append(("sensor", "last_eating_duration", _e(serial, "last_eating_duration", b, {
+            "name":                "Last Eating Duration",
+            "state_topic":         state_topic(serial, "last_eating_duration"),
+            "unit_of_measurement": "s",
+            "device_class":        "duration",
+            "state_class":         "measurement",
+            "icon":                "mdi:timer",
+        })))
+
         entities.append(("sensor", "next_meal", _e(serial, "next_meal", b, {
             "name":         "Next Meal",
             "state_topic":  state_topic(serial, "next_meal"),
@@ -390,10 +399,13 @@ async def publish_state(client, serial: str, cfg: dict, state: dict, plans: list
             dt = datetime.datetime.fromtimestamp(int(last_fed), tz=datetime.timezone.utc)
             await client.publish(state_topic(serial, "last_fed"), dt.isoformat(), retain=True)
 
+        last_eating = cfg.get("last_eating_secs")
+        if last_eating is not None:
+            await client.publish(state_topic(serial, "last_eating_duration"), str(last_eating), retain=True)
+
         if plans is not None:
             next_ts = _next_meal_ts(plans)
-            if next_ts:
-                await client.publish(state_topic(serial, "next_meal"), next_ts, retain=True)
+            await client.publish(state_topic(serial, "next_meal"), next_ts or "", retain=True)
 
         last_desiccant = cfg.get("last_desiccant_ts")
         if last_desiccant:
@@ -413,8 +425,8 @@ async def publish_state(client, serial: str, cfg: dict, state: dict, plans: list
         display_text = cfg.get("display_text", "")
         await client.publish(state_topic(serial, "display_text"), display_text[:20], retain=True)
 
-        icon_id = cfg.get("display_icon", 0)
-        await client.publish(state_topic(serial, "display_icon"), _ICON_IDS.get(icon_id, "None"), retain=True)
+        icon_name = cfg.get("display_icon_name") or _ICON_IDS.get(cfg.get("display_icon", 0), "None")
+        await client.publish(state_topic(serial, "display_icon"), icon_name, retain=True)
 
 
 

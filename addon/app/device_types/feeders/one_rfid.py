@@ -53,5 +53,5 @@ def compute_alerts(state: dict, cfg: dict, online: bool) -> set:
     return alerts
 
 
-def track_intake(old_state: dict, new_state: dict) -> float | None:
+def track_intake(old_state: dict, new_state: dict, min_grams: float = 5) -> float | None:
     return None  # feeders don't track water intake

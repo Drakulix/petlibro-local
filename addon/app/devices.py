@@ -38,6 +38,8 @@ _ALERT_MESSAGES:  dict[str, str] = _device_types.all_alert_messages()
 # Serials currently subscribed: serial -> (model, device_type)
 _devices: dict[str, tuple[str, str]] = {}
 
+_pet_no_eat_alerted: dict[str, bool] = {}
+
 _client_task:     asyncio.Task | None  = None
 _client_ref:      aiomqtt.Client | None = None
 _reconnect_event: asyncio.Event | None = None
@@ -351,11 +353,16 @@ async def _check_and_fire_alerts(serial: str):
         device_cfg = _storage.get_devices().get(serial, {})
         name       = device_cfg.get("name") or serial[:6]
         for alert in new_alerts:
-            msg   = _ALERT_MESSAGES.get(alert, alert)
-            title = f"Petlibro Local: {name} — {msg}"
-            await _notifications.fire_notification(title, msg, settings, device_cfg)
+            msg      = _ALERT_MESSAGES.get(alert, alert)
+            title    = f"Petlibro Local: {name} — {msg}"
+            notif_id = f"petlibro_local_{serial[:8]}_{alert}"
+            await _notifications.fire_notification(title, msg, settings, device_cfg,
+                                                   notification_id=notif_id)
             _LOGGER.info("Alert fired: %s for %s...", alert, serial[:6])
         if "offline" in cleared:
+            # Auto-dismiss the offline notification (HA bell + mobile clear) before firing back-online
+            offline_id = f"petlibro_local_{serial[:8]}_offline"
+            await _notifications.dismiss_notification(offline_id, settings, device_cfg)
             msg   = "Device is back online."
             title = f"Petlibro Local: {name} — {msg}"
             await _notifications.fire_notification(title, msg, settings, device_cfg)
@@ -440,21 +447,23 @@ async def _handle_ha_command(serial: str, topic: str, payload: str):
         icon_name = cmd["_display_icon"]
         icon_id = ha_mqtt._ICON_NAMES.get(icon_name, None)
         if icon_id is not None and icon_id > 0:
-            _storage.save_device(serial, {"display_icon": icon_id, "display_text": ""})
+            _storage.save_device(serial, {"display_icon": icon_id, "display_text": "", "display_icon_name": icon_name})
             ok = await send_display(serial, "", icon_id)
         elif icon_name in ha_mqtt._CUSTOM_FRAMES:
             # Built-in custom frame (e.g. Petlibro Salute)
+            _storage.save_device(serial, {"display_icon": icon_id or -1, "display_icon_name": icon_name})
             ok = await send_display_frame(serial, ha_mqtt._CUSTOM_FRAMES[icon_name])
         else:
             # Check user-saved custom icons by name
             saved = {ic["name"]: ic for ic in _storage.get_custom_icons()}
             if icon_name in saved:
                 frame = [0] + [r << 7 for r in saved[icon_name]["rows"]] + [0]
+                _storage.save_device(serial, {"display_icon_name": icon_name, "display_icon": 0})
                 ok = await send_display_frame(serial, frame)
             else:
                 # "None" — revert to stored text
                 cfg = _storage.get_devices().get(serial, {})
-                _storage.save_device(serial, {"display_icon": 0})
+                _storage.save_device(serial, {"display_icon": 0, "display_icon_name": None})
                 ok = await send_display(serial, cfg.get("display_text", ""), 0)
         asyncio.ensure_future(_publish_ha_state(serial))
         _LOGGER.info("HA Display Icon %s... %s: %s", serial[:6], icon_name, "ok" if ok else "failed")
@@ -590,6 +599,18 @@ def _handle_message(serial: str, topic_str: str, raw: str):
                                 extra={"duration_secs": duration_secs,
                                        "rfid_tag": act_tag, "pet_id": pet_id},
                             )
+                            # Auto-dismiss no-eat alert if one was firing
+                            if pet_id and _pet_no_eat_alerted.pop(pet_id, False):
+                                try:
+                                    import notifications as _notif2
+                                    import storage as _st2
+                                    notif_id = f"petlibro_local_{pet_id[:8]}_no_eat"
+                                    asyncio.ensure_future(
+                                        _notif2.dismiss_notification(notif_id, _st2.get_settings(),
+                                                                     {"notify_bell": True, "notify_mobile": True})
+                                    )
+                                except Exception:
+                                    pass
                             # Pet eating notification
                             try:
                                 import notifications as _notif
@@ -606,8 +627,10 @@ def _handle_message(serial: str, topic_str: str, raw: str):
                                     "notify_email":  pet_cfg.get("notify_email", True),
                                     "notify_mobile": pet_cfg.get("notify_mobile", False),
                                 }
+                                notif_id = f"petlibro_local_{(pet_id or serial)[:8]}_eating_{int(_time.time())}"
                                 asyncio.ensure_future(
-                                    _notif.fire_notification(title, msg, _storage.get_settings(), notify_cfg)
+                                    _notif.fire_notification(title, msg, _storage.get_settings(), notify_cfg,
+                                                             notification_id=notif_id)
                                 )
                             except Exception:
                                 _LOGGER.exception("Pet eating notification error")
@@ -638,9 +661,9 @@ def _handle_message(serial: str, topic_str: str, raw: str):
                         min_secs = 30
                     if duration_secs >= min_secs:
                         try:
-                            import time as _time2
-                            now_ts = int(_time2.time())
+                            now_ts = int(_time.time())
                             trigger = (data.get("triggerType") or "").upper()
+                            _storage.save_device(serial, {"last_eating_secs": duration_secs})
                             if trigger == "PET_IDENTIFY":
                                 # RFID-triggered: attribute to pet and log as eating
                                 act_tag = _state.get(serial, {}).get("last_rfid_tag")
@@ -659,13 +682,13 @@ def _handle_message(serial: str, topic_str: str, raw: str):
                                     if pet_id:
                                         extra["pet_id"] = pet_id
                                 _storage.log_feeder_event(serial, "pet_eating", extra=extra)
+                                _storage.save_device(serial, {"last_fed_ts": now_ts})
                             else:
-                                # Door-only: log for device history but not as a pet eating session
+                                # Door-only: log for device history but not as a feeding event
                                 _storage.log_feeder_event(
                                     serial, "door_open",
                                     extra={"duration_secs": duration_secs},
                                 )
-                            _storage.save_device(serial, {"last_fed_ts": now_ts})
                         except Exception:
                             _LOGGER.exception("WAREHOUSE_DOOR_EVENT eating log error")
         _mark_online(serial)
@@ -698,12 +721,18 @@ def _handle_message(serial: str, topic_str: str, raw: str):
             old_state = dict(_state.get(serial, {}))
             _state.setdefault(serial, {}).update(partial)
             if mod:
-                grams = mod.track_intake(old_state, _state[serial])
+                try:
+                    import storage as _storage
+                    min_drink = _storage.get_devices().get(serial, {}).get("min_drink_grams", 5)
+                except Exception:
+                    min_drink = 5
+                grams = mod.track_intake(old_state, _state[serial], min_grams=min_drink)
                 if grams:
                     try:
                         import storage as _storage
                         _storage.record_intake(serial, grams)
-                        _LOGGER.debug("Recorded %.0fg intake for %s...", grams, serial[:6])
+                        _storage.log_fountain_event(serial, "drink", grams=grams)
+                        _LOGGER.debug("Recorded %.0fg drink for %s...", grams, serial[:6])
                     except Exception:
                         _LOGGER.exception("Failed to record intake for %s...", serial[:6])
             asyncio.ensure_future(_persist_state_cache(serial))
@@ -842,12 +871,61 @@ async def _offline_watchdog():
             last = _last_seen.get(serial)
             if last is not None and (now - last) > WATCHDOG_SECS:
                 _LOGGER.warning("Watchdog: no message from %s... in %.0fs — marking offline", serial[:6], now - last)
-                # Pre-populate _offline_since with when we last heard from the device so
-                # the OFFLINE_ALERT_DELAY check in _check_and_fire_alerts sees the true
-                # elapsed time rather than 0 seconds.
                 _offline_since.setdefault(serial, last)
                 _mark_offline(serial)
                 asyncio.ensure_future(_check_and_fire_alerts(serial))
+
+        # Per-pet hasn't-eaten check
+        try:
+            import storage as _storage
+            import notifications as _notifications
+            pets     = _storage.get_pets()
+            settings = _storage.get_settings()
+            devices_data = _storage.get_devices()
+            for pet_id, pet in pets.items():
+                if not pet.get("no_eat_alert_enabled"):
+                    _pet_no_eat_alerted.pop(pet_id, None)
+                    continue
+                threshold = int(pet.get("no_eat_alert_hours") or 12) * 3600
+                pet_rfid  = str(pet.get("rfid_tag")) if pet.get("rfid_tag") else None
+                last_eat_ms = None
+                for serial, cfg in devices_data.items():
+                    if pet_id not in cfg.get("pet_ids", []):
+                        continue
+                    sole = len(cfg.get("pet_ids", [])) == 1
+                    for entry in _storage.get_feeder_log(serial, 100):
+                        if entry.get("type") != "pet_eating":
+                            continue
+                        if (entry.get("pet_id") == pet_id
+                                or (pet_rfid and str(entry.get("rfid_tag", "")) == pet_rfid)
+                                or sole):
+                            ts = entry.get("ts", 0)
+                            if last_eat_ms is None or ts > last_eat_ms:
+                                last_eat_ms = ts
+                if last_eat_ms is None:
+                    continue  # no sessions recorded yet, don't alert
+                secs_since = now - last_eat_ms / 1000
+                if secs_since >= threshold and not _pet_no_eat_alerted.get(pet_id):
+                    pet_name = pet.get("name") or "Your pet"
+                    hrs = secs_since / 3600
+                    msg   = f"{pet_name} has not eaten in {hrs:.1f} hours."
+                    title = f"Petlibro Local: {msg}"
+                    notify_cfg = {
+                        "notify_bell":   pet.get("notify_bell",   True),
+                        "notify_email":  pet.get("notify_email",  True),
+                        "notify_mobile": pet.get("notify_mobile", False),
+                    }
+                    notif_id = f"petlibro_local_{pet_id[:8]}_no_eat"
+                    asyncio.ensure_future(
+                        _notifications.fire_notification(title, msg, settings, notify_cfg,
+                                                         notification_id=notif_id)
+                    )
+                    _pet_no_eat_alerted[pet_id] = True
+                    _LOGGER.info("No-eat alert fired for pet %s...", pet_id[:6])
+                elif secs_since < threshold:
+                    _pet_no_eat_alerted.pop(pet_id, None)
+        except Exception:
+            _LOGGER.exception("Pet no-eat watchdog error")
 
 
 # ── MQTT loop ──────────────────────────────────────────────────────────────

@@ -2,6 +2,24 @@
 
 For full release notes and details on each version, see the [GitHub Releases page](https://github.com/smcneece/petlibro-local/releases).
 
+## 2026.08.3
+- Hasn't eaten alert: per-pet configurable alert that fires via bell, email, and mobile push if no eating session is detected within a set number of hours. Enabled in the pet profile and auto-dismisses when an eating session is logged
+- New Home Assistant sensor: Last Eating Duration (seconds). Updates after every qualifying door session — RFID or manual — so automations can check how long a pet was at the feeder to decide whether to skip or dispense the next meal
+- Minimum drink detection threshold is now configurable per fountain in the Maintenance tab. Default is 5g (≈ 1 tsp), down from the previous hardcoded 10g. Lower it for kittens or small sips; raise it if pump turbulence triggers false readings
+- Fountain drink log: each detected drinking event (weight drop between 10g and 800g) is now recorded with a timestamp and volume. The Log tab on a fountain device card now shows a timestamped drink activity list instead of the 7-day bar chart. Daily totals are still shown on the device card and in the overview tab
+- Next meal time on the feeder card now shows the time only (3:00 AM) without a Tomorrow or weekday prefix
+- Storage writes are now atomic: data is written to a temporary file and replaced in place, preventing configuration loss on ungraceful host power loss or reboot
+- Clearing all feeding plans now correctly clears the Next Meal sensor in Home Assistant instead of leaving the previous timestamp displayed indefinitely
+- Editing or saving feeding plans now immediately pushes the updated Next Meal state to Home Assistant; previously the sensor stayed stale until the next device MQTT message
+- Adding, renaming, or deleting a custom display icon now immediately updates the Display Icon select entity options in Home Assistant without requiring an app restart
+- Selecting a display icon via a Home Assistant automation or dashboard now correctly saves the icon name, so the app card reflects the active icon
+- Active custom display icon name now correctly reported to the Home Assistant select entity after app restart; previously the select would revert to "None" if a user-created icon was active
+- Bowl cleaning, manual lid access, and other non-feeding door events no longer update the "Last Fed" timestamp in the app and Home Assistant sensor
+- Device alert notifications now use unique IDs per device and alert type, so a second feeder going offline no longer overwrites the first feeder's notification in the HA bell panel
+- Pet eating notifications also carry unique IDs, so Finn's notification and Zoey's notification appear as separate bell entries
+- Offline alerts auto-dismiss from the HA bell and mobile push when a device comes back online
+- Hardcoded English strings in the device detail modal (LED Display, Scrolling Text, door open log entries, notification channel labels) are now routed through the i18n system
+
 ## 2026.08.2
 - Offline watchdog: devices are now marked offline in Home Assistant and the app if no MQTT message is received within 5 minutes, catching power loss and Wi-Fi drops without requiring a broker restart
 - Offline and back-online notifications now fire correctly via email, mobile push, and HA persistent notification when a device goes silent or reconnects
