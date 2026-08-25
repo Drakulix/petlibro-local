@@ -39,15 +39,18 @@ If you are not comfortable with these terms, do not use this software.
 |--------|--------------|------------|--------|
 | Dockstream 2 Smart Fountain (black) | WF03...BD... | PLWF106 | Supported |
 | Dockstream 2 Smart Fountain (white) | WF03...BA... | PLWF106 | Supported |
+| Dockstream 2 Smart Fountain (white, alt. hardware revision) | WF02... | PLWF106 | Supported |
 | Dockstream 2 Cordless Fountain (black) | WF04...BD... (inferred) | PLWF116 | Beta |
 | Dockstream 2 Cordless Fountain (white) | WF04...BA... (inferred) | PLWF116 | Beta |
 | One RFID Smart Feeder | AF06 | PLAF301 | Supported |
 
-**Color variant encoding:** On the Dockstream 2, I think the serial number encodes the color variant. The characters at positions 10–11 appear to indicate color: `BD` = black, `BA` = white. If other owners of the Dockstream 2 fountains could also let me know by opening an issue. 
+**Color variant encoding:** On the Dockstream 2, I think the serial number encodes the color variant. The characters at positions 10–11 appear to indicate color: `BD` = black, `BA` = white. This does not hold for the `WF02` serial variant confirmed below, so the encoding may differ by hardware revision. If other owners of the Dockstream 2 fountains could also let me know by opening an issue. 
+
+**`WF02` variant:** A user-submitted serial (`WF02013F0F3311A87`, white) confirmed as a working Dockstream 2 Smart Fountain reporting the same `PLWF106` MQTT model as the `WF03` units, so it is the same device on a different hardware/serial revision. Auto Setup now recognizes this prefix.
 
 **Cordless fountain:** Feature-identical to the wired Dockstream 2 with the addition of battery level, charge state (Charging / Charged / Discharging), and battery percentage. MQTT model `PLWF116` is taken from the cloud HA integration. The serial prefix `WF04` and color encoding (`BD`/`BA`) are inferred by analogy with the wired model, not confirmed from a real device. If you own one, please open an issue with your serial number so we can confirm or correct these.
 
-**One RFID Smart Feeder:** Significantly different from the fountain: RFID door, desiccant tray, feeding plan, display matrix, sound, and lid controls. Serial prefix confirmed as `AF06`, MQTT model confirmed as `PLAF301`. Color variant does not appear to be encoded at positions 10–11 the way fountain serials are.
+**One RFID Smart Feeder:** Significantly different from the fountain: RFID door, desiccant tray, feeding plan, display matrix, sound, and lid controls. Serial prefix confirmed as `AF06`, MQTT model confirmed as `PLAF301`. Color variant does not appear to be encoded at positions 10–11 the way fountain serials are. Note that Petlibro's product listing shows this device as model `PLAF103`; that's the retail box/product number and is unrelated to `PLAF301`, which is the MQTT topic model this app matches on. Serials on newer hardware revisions run a few characters longer than early units but use the same `AF06` prefix and work the same way.
 
 Additional devices can be added by contributing a device type entry, the MQTT model string (the topic prefix after `dl/`), and the serial number prefix used for auto-detection during capture. The MQTT topic structure is consistent across the Petlibro product line.
 
@@ -101,6 +104,8 @@ The first time you set up a device, Petlibro Local briefly stops Mosquitto and r
 - Filter replacement countdown computed from the device's own timestamp
 - WiFi signal strength (RSSI) shown next to the online status badge, color-coded: green above -65 dBm, yellow above -80 dBm, red below that
 - Online/offline status with automatic detection
+- Drink log: each detected drink is recorded with a timestamp and volume, viewable as a list in the device's Log tab. Daily totals still show on the card and in the overview
+- The weight drop used to detect a drink is configurable per fountain in the Maintenance tab, defaulting to 5 grams (about a teaspoon)
 
 ### Fountain Controls
 - Pump on/off toggle
@@ -166,6 +171,8 @@ Petlibro Local sends notifications through three channels simultaneously when en
 | Cleaning overdue | Fountain or bowl cleaning interval exceeded |
 
 **Pet activity notifications** fire when an RFID eating session is detected: "Zoey ate for 3m25s at Zoey's Feeder." These use the same notification channels as device alerts and can be enabled or disabled per pet.
+
+**Hasn't-eaten alerts** are a separate per-pet setting: choose a number of hours, and if no eating session is detected within that window, a notification fires through the same channels. It clears itself automatically the next time that pet eats, so there's nothing to dismiss by hand.
 
 ### Settings
 - MQTT broker host, port, username, and password for the app's own broker connection
@@ -300,6 +307,7 @@ Petlibro Local automatically publishes MQTT discovery messages so Home Assistant
 | Volume | Number (slider) | Speaker volume 0–100 |
 | Food Door | Binary Sensor | Open/closed state of the feeder lid |
 | Last Fed | Sensor | Timestamp of the last detected eating session |
+| Last Eating Duration | Sensor | Duration in seconds of the last qualifying feeder door session, RFID or manual |
 | Next Meal | Sensor | Timestamp of the next enabled scheduled feeding |
 | Desiccant Days Remaining | Sensor (diagnostic) | Days until desiccant replacement is due |
 | Firmware Version | Sensor (diagnostic) | Current firmware version string |

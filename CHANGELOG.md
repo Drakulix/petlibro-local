@@ -2,6 +2,10 @@
 
 For full release notes and details on each version, see the [GitHub Releases page](https://github.com/smcneece/petlibro-local/releases).
 
+## 2026.08.4
+- Dockstream 2 Smart Fountain: added `WF02` as a recognized serial prefix for Auto Setup, confirmed by a user-submitted device. Same `PLWF106` MQTT model as `WF03` units, just a different hardware/serial revision
+- New "Download Debug Capture" button in Help/About: the app now continuously keeps a rolling log of raw dl/ MQTT traffic in the background, including from devices it doesn't recognize yet (marked UNRECOGNIZED in the download). Since these devices only check in occasionally, capturing continuously instead of during a fixed window means intermittent devices still get caught. Makes it much easier to diagnose an unsupported or misbehaving device without walking through a manual `mosquitto_sub` capture
+
 ## 2026.08.3
 - Hasn't eaten alert: per-pet configurable alert that fires via bell, email, and mobile push if no eating session is detected within a set number of hours. Enabled in the pet profile and auto-dismisses when an eating session is logged
 - New Home Assistant sensor: Last Eating Duration (seconds). Updates after every qualifying door session — RFID or manual — so automations can check how long a pet was at the feeder to decide whether to skip or dispense the next meal

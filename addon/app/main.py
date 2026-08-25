@@ -18,7 +18,7 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name
 logging.getLogger("aiohttp.access").setLevel(logging.WARNING)
 _LOGGER = logging.getLogger(__name__)
 
-VERSION = "2026.08.3"
+VERSION = "2026.08.4"
 
 # Credential capture state
 _capture_state: dict = {"status": "idle", "result": {}}
@@ -473,6 +473,38 @@ async def handle_api_diag_mosquitto(request):
     })
 
 
+async def handle_api_diag_debug_capture(request):
+    """Diagnostic: return the rolling buffer of raw dl/ MQTT traffic as a
+    downloadable log file, including messages from devices this app doesn't
+    recognize. Populated continuously in the background (see devices._mqtt_loop),
+    not captured on demand, since devices only chirp occasionally. Used by the
+    Help/About "Download Debug Capture" button."""
+    import time
+    messages = devices.get_raw_capture()
+    unrecognized_count = sum(1 for m in messages if not m["recognized"])
+
+    lines = [
+        f"Petlibro Local debug capture -- {len(messages)} message(s) buffered, {unrecognized_count} from unrecognized device(s)",
+    ]
+    if messages:
+        span_start = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(messages[0]["ts"]))
+        span_end   = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(messages[-1]["ts"]))
+        lines.append(f"Covering {span_start} through {span_end}")
+    lines.append("")
+    for m in messages:
+        ts_str = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(m["ts"]))
+        tag    = "" if m["recognized"] else "[UNRECOGNIZED] "
+        lines.append(f"[{ts_str}] {tag}{m['topic']}: {m['payload']}")
+    body = "\n".join(lines) + "\n"
+
+    filename = f"petlibro-debug-capture-{time.strftime('%Y%m%dT%H%M%S')}.log"
+    return web.Response(
+        text=body,
+        content_type="text/plain",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
 async def handle_api_device_intake(request):
     serial = request.match_info["serial"]
     days = min(int(request.query.get("days", 7)), 30)
@@ -681,6 +713,7 @@ def main():
     app.router.add_get("/api/ha-notify-services",        handle_api_ha_notify_services)
     app.router.add_get("/api/ha-mobile-targets",         handle_api_ha_mobile_targets)
     app.router.add_get("/api/diag/mosquitto",            handle_api_diag_mosquitto)
+    app.router.add_get("/api/diag/debug-capture",        handle_api_diag_debug_capture)
 
     port = int(os.environ.get("INGRESS_PORT", 8765))
     _LOGGER.info("Starting Petlibro Local on port %d", port)

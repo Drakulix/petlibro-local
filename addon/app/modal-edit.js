@@ -162,6 +162,7 @@ function populateRoomSelect(selectId, currentValue) {
 
 // ── Device type detection ─────────────────────────────────────────────────
 const DEVICE_TYPE_MAP = {
+  "WF02": { device_type: "dockstream2",         model: "WF02" },
   "WF03": { device_type: "dockstream2",         model: "WF03" },
   "WF04": { device_type: "dockstream2_cordless", model: "WF04" },
   "AF06": { device_type: "one_rfid",             model: "AF06" },

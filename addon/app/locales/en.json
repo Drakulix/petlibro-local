@@ -337,6 +337,9 @@
   "about.report_issue": "Report an Issue",
   "about.request_feature": "Request a Feature",
   "about.sponsor": "♥ Sponsor this project",
+  "about.debug_capture": "Download Debug Capture",
+  "about.debug_capture_hint": "Downloads a rolling log of recent raw device MQTT traffic, including any device this app doesn't recognize (marked UNRECOGNIZED). Collected continuously in the background, so it also catches devices that only check in occasionally. Attach this file when reporting an unsupported or misbehaving device.",
+  "about.debug_capture_failed": "Debug capture failed: {error}",
 
   "room.select": "— Select Room —",
   "weight.kg": "Weight (kg)",

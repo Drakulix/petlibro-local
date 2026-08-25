@@ -6,6 +6,7 @@ Device-type-specific logic (alerts, intake tracking) lives in device_types/.
 """
 
 import asyncio
+import collections
 import json
 import logging
 import os
@@ -25,6 +26,14 @@ _last_seen:    dict[str, float]  = {}   # epoch of most recent MQTT message from
 
 OFFLINE_ALERT_DELAY_SECS = 90
 WATCHDOG_SECS = 300  # mark offline after 5 min of silence
+
+# Rolling capture of raw dl/ traffic for diagnostics (Help/About "Download
+# Debug Capture"). Devices only chirp occasionally, so this is passive and
+# always-on rather than a fixed listen window that could easily miss a device
+# that wakes up once every few minutes. Bounded by count, not time.
+_RAW_CAPTURE_MAXLEN = 2000
+_raw_capture: collections.deque = collections.deque(maxlen=_RAW_CAPTURE_MAXLEN)
+_unrecognized_serials_seen: set = set()  # dedup so the addon log doesn't spam per-message
 
 _host = "localhost"
 _port = 1883
@@ -978,6 +987,11 @@ async def _mqtt_loop():
                     await ha_mqtt.publish_state(client, serial, cfg, state, plans=plans)
                     await ha_mqtt.publish_availability(client, serial, True)
 
+                # Always listen to all raw device traffic, not just configured
+                # devices' own topics, so unrecognized hardware still shows up
+                # in the debug capture for diagnostics.
+                await client.subscribe("dl/#")
+
                 async for message in client.messages:
                     if _reconnect_event and _reconnect_event.is_set():
                         break
@@ -993,10 +1007,23 @@ async def _mqtt_loop():
                         continue
 
                     # Device telemetry: dl/{model}/{serial}/device/{channel}/post
-                    if len(parts) >= 4:
+                    if parts[0] == "dl" and len(parts) >= 4:
                         serial = parts[2]
-                        if serial in _devices:
+                        recognized = serial in _devices
+                        _raw_capture.append({
+                            "ts":         _time.time(),
+                            "topic":      topic_str,
+                            "payload":    payload_str,
+                            "recognized": recognized,
+                        })
+                        if recognized:
                             _handle_message(serial, topic_str, payload_str)
+                        elif serial not in _unrecognized_serials_seen:
+                            _unrecognized_serials_seen.add(serial)
+                            _LOGGER.info(
+                                "Unrecognized dl/ device seen: serial=%s... model=%s (not configured in this app) — captured for diagnostics",
+                                serial[:8], parts[1],
+                            )
 
         except aiomqtt.MqttError as e:
             _LOGGER.warning("MQTT connection lost: %s — retrying in 10s", e)
@@ -1029,6 +1056,16 @@ async def test_connection(host: str, port: int, user: str, password: str) -> boo
         return True
     except Exception:
         return False
+
+
+# ── Debug capture ──────────────────────────────────────────────────────────
+
+def get_raw_capture() -> list[dict]:
+    """Snapshot of the rolling raw dl/ traffic buffer, oldest first. Populated
+    continuously by _mqtt_loop rather than on demand, since devices only chirp
+    occasionally and a fixed listen window could easily miss one. Used by the
+    Help/About "Download Debug Capture" button."""
+    return list(_raw_capture)
 
 
 _watchdog_task: asyncio.Task | None = None

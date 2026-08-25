@@ -11,6 +11,33 @@ async function openAbout() {
   }
 }
 
+async function downloadDebugCapture() {
+  const btn = document.getElementById("btn-debug-capture");
+  const originalText = btn.textContent;
+  btn.disabled = true;
+  try {
+    const r = await fetch(`${BASE}/api/diag/debug-capture`);
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    const blob = await r.blob();
+    const disposition = r.headers.get("Content-Disposition") || "";
+    const match = disposition.match(/filename="?([^"]+)"?/);
+    const filename = match ? match[1] : "petlibro-debug-capture.log";
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  } catch(e) {
+    alert(t("about.debug_capture_failed", {error: e.message}));
+  } finally {
+    btn.disabled = false;
+    btn.textContent = originalText;
+  }
+}
+
 // ── Settings ──────────────────────────────────────────────────────────────
 function renderSettings() {
   document.getElementById("s-mqtt-host").value = _settings.mqtt_host || "";
