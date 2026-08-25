@@ -2,6 +2,10 @@
 
 For full release notes and details on each version, see the [GitHub Releases page](https://github.com/smcneece/petlibro-local/releases).
 
+## 2026.08.5
+- Critical fix: an MQTT self-loop introduced by the 2026.08.4 debug capture feature could cause the app to repeatedly receive and reprocess its own outbound acknowledgments (device boot acks, feeding plan responses, grain dispense acks) as if the feeder had sent them, flooding the log and starving real message processing. This could cause scheduled feedings to silently fail to fire. Message handling is now correctly scoped to only the feeder's own outbound telemetry topics
+- Feeding schedule list now displays sorted by time of day for readability. Storage order and what gets sent to the feeder are unaffected
+
 ## 2026.08.4
 - Dockstream 2 Smart Fountain: added `WF02` as a recognized serial prefix for Auto Setup, confirmed by a user-submitted device. Same `PLWF106` MQTT model as `WF03` units, just a different hardware/serial revision
 - New "Download Debug Capture" button in Help/About: the app now continuously keeps a rolling log of raw dl/ MQTT traffic in the background, including from devices it doesn't recognize yet (marked UNRECOGNIZED in the download). Since these devices only check in occasionally, capturing continuously instead of during a fixed window means intermittent devices still get caught. Makes it much easier to diagnose an unsupported or misbehaving device without walking through a manual `mosquitto_sub` capture

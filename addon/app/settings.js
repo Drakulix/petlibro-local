@@ -71,6 +71,8 @@ function renderSettings() {
       if (opt.value === tzVal) { opt.selected = true; break; }
     }
   }
+  const audioUrlEl = document.getElementById("s-local-audio-base-url");
+  if (audioUrlEl) audioUrlEl.value = _settings.local_audio_base_url || "";
 }
 
 
@@ -87,6 +89,7 @@ async function saveSettings(fromTab) {
     notify_email_service: document.getElementById("s-notify-email-service")?.value || "",
     notify_email_to: (document.getElementById("s-notify-email-to")?.value || "").trim(),
     notify_mobile_default_service: document.getElementById("s-notify-mobile-service")?.value || "",
+    local_audio_base_url: (document.getElementById("s-local-audio-base-url")?.value || "").trim(),
   };
   const statusEl = document.getElementById("mqtt-status");
   statusEl.className = "mqtt-status";

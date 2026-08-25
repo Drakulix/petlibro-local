@@ -191,6 +191,7 @@ async function detectLanguage(availableLangs) {
   document.getElementById("btn-save-general").addEventListener("click", () => saveSettings("general"));
   document.getElementById("btn-save-notifications").addEventListener("click", () => saveSettings("notifications"));
   document.getElementById("btn-save-mqtt").addEventListener("click", () => saveSettings("mqtt"));
+  document.getElementById("btn-save-audio-settings").addEventListener("click", () => saveSettings("audio"));
   document.getElementById("btn-banner-mqtt").addEventListener("click", () => {
     switchTab("settings");
     switchSettingsTab("mqtt");

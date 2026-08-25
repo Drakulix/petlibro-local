@@ -29,6 +29,7 @@ DEFAULT_SETTINGS = {
     "notify_email_service": "",
     "notify_email_to": "",
     "notify_mobile_default_service": "",
+    "local_audio_base_url": "",
 }
 
 ALLOWED_SETTINGS = set(DEFAULT_SETTINGS.keys()) | {"feeder_timezone"}

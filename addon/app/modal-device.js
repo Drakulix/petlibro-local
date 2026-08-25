@@ -294,10 +294,29 @@ function buildMaintenanceTab(device) {
         style="max-width:90px;color:${hCol}">
     </div>
     <label class="form-label">${t("maint.bowl_clean_every")}</label>
-    <div style="display:flex;gap:8px">
+    <div style="display:flex;gap:8px;margin-bottom:18px">
       <input class="form-input" id="maint-housing-interval" type="number" min="1" max="365" value="${device.housing_cleaning_interval_days ?? 30}" style="flex:1">
       <button class="btn-secondary" id="btn-record-housing" style="flex-shrink:0">${t("maint.record_housing")}</button>
-    </div>`;
+    </div>
+
+    <div class="tab-section-heading">${t("maint.feed_sounds")}</div>
+    <p class="form-hint">${t("maint.feed_sounds_hint")}</p>
+    <div class="form-row">
+      <label class="form-label">${t("maint.feed_sound_select")}</label>
+      <select class="form-select" id="maint-audio-select">
+        <option value="" data-i18n="maint.feed_sound_loading">${t("maint.feed_sound_loading")}</option>
+      </select>
+    </div>
+    <button class="btn-secondary" id="btn-push-audio" style="width:100%;margin-bottom:18px">${t("maint.push_sound")}</button>
+
+    <label class="form-label">${t("maint.new_sound_name")}</label>
+    <input class="form-input" id="maint-audio-name" type="text" placeholder="breakfast" maxlength="40" style="margin-bottom:8px">
+    <div style="display:flex;gap:8px">
+      <button class="btn-secondary" id="btn-audio-upload-file" style="flex:1">${t("maint.upload_file")}</button>
+      <button class="btn-secondary" id="btn-audio-record" style="flex:1">${t("maint.record")}</button>
+    </div>
+    <input type="file" id="maint-audio-file-input" accept="audio/*,.aac" style="display:none">
+    <p class="form-hint" id="maint-audio-status"></p>`;
   }
 
   const filterDays = filterDaysRemaining(device);
@@ -355,6 +374,101 @@ function buildMaintenanceTab(device) {
   </div>
   <p class="form-hint">${t("maint.min_drink_hint")}</p>
   <button class="btn-secondary" id="btn-save-min-drink" style="width:100%">${t("maint.save_threshold")}</button>`;
+}
+
+// ── Custom feed sounds (feeder maintenance tab) ────────────────────────────
+async function _wireFeedSoundControls(device, selectEl) {
+  const statusEl = document.getElementById("maint-audio-status");
+  const nameInput = document.getElementById("maint-audio-name");
+  const fileInput = document.getElementById("maint-audio-file-input");
+  const pushBtn   = document.getElementById("btn-push-audio");
+  const uploadBtn = document.getElementById("btn-audio-upload-file");
+  const recordBtn = document.getElementById("btn-audio-record");
+
+  async function refreshList(selectName) {
+    try {
+      const names = await api("GET", "/api/audio");
+      selectEl.innerHTML = names.length
+        ? names.map(n => `<option value="${escHtml(n)}">${escHtml(n)}</option>`).join("")
+        : `<option value="">${t("maint.feed_sound_none")}</option>`;
+      if (selectName && names.includes(selectName)) selectEl.value = selectName;
+    } catch {
+      selectEl.innerHTML = `<option value="">${t("maint.feed_sound_none")}</option>`;
+    }
+  }
+  await refreshList();
+
+  async function uploadBlob(blob, filename) {
+    const name = (nameInput.value || "").trim().toLowerCase().replace(/[^a-z0-9_-]/g, "");
+    if (!name) { statusEl.textContent = t("maint.name_required"); return; }
+    statusEl.textContent = t("maint.uploading");
+    try {
+      const formData = new FormData();
+      formData.append("name", name);
+      formData.append("file", blob, filename);
+      const r = await fetch(`${BASE}/api/audio`, { method: "POST", body: formData });
+      if (!r.ok) throw new Error(await r.text());
+      statusEl.textContent = t("maint.upload_success");
+      nameInput.value = "";
+      await refreshList(name);
+    } catch(e) {
+      statusEl.textContent = t("maint.upload_failed", {error: e.message});
+    }
+  }
+
+  if (pushBtn) {
+    pushBtn.onclick = async () => {
+      const name = selectEl.value;
+      if (!name) { statusEl.textContent = t("maint.feed_sound_select_first"); return; }
+      pushBtn.disabled = true;
+      statusEl.textContent = t("maint.pushing");
+      try {
+        await api("POST", `/api/devices/${device.serial}/push-audio`, { name });
+        statusEl.textContent = t("maint.push_success");
+      } catch(e) {
+        statusEl.textContent = t("maint.push_failed", {error: e.message});
+      } finally {
+        pushBtn.disabled = false;
+      }
+    };
+  }
+
+  if (uploadBtn && fileInput) {
+    uploadBtn.onclick = () => fileInput.click();
+    fileInput.onchange = () => {
+      const file = fileInput.files[0];
+      if (file) uploadBlob(file, file.name);
+      fileInput.value = "";
+    };
+  }
+
+  if (recordBtn) {
+    let mediaRecorder = null;
+    let chunks = [];
+    recordBtn.onclick = async () => {
+      if (mediaRecorder && mediaRecorder.state === "recording") {
+        mediaRecorder.stop();
+        return;
+      }
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        chunks = [];
+        mediaRecorder = new MediaRecorder(stream);
+        mediaRecorder.ondataavailable = (e) => { if (e.data.size > 0) chunks.push(e.data); };
+        mediaRecorder.onstop = () => {
+          stream.getTracks().forEach(track => track.stop());
+          recordBtn.textContent = t("maint.record");
+          const blob = new Blob(chunks, { type: mediaRecorder.mimeType || "audio/webm" });
+          uploadBlob(blob, "recording.webm");
+        };
+        mediaRecorder.start();
+        recordBtn.textContent = t("maint.recording_stop");
+        statusEl.textContent = t("maint.recording_in_progress");
+      } catch(e) {
+        statusEl.textContent = t("maint.mic_denied", {error: e.message});
+      }
+    };
+  }
 }
 
 // ── Log tab ───────────────────────────────────────────────────────────────
@@ -470,7 +584,15 @@ function _schedDayLabel(repeatDay) {
 }
 
 function buildScheduleTab(plans) {
-  const rows = plans.map((plan, i) => {
+  // Display in chronological (local time) order for readability, but keep
+  // data-idx pointing at each plan's real position in the underlying array --
+  // that's what edit/delete/toggle and the push-to-feeder order are keyed on,
+  // and nothing about storage or the feeder protocol requires sorted order.
+  const order = plans.map((_, i) => i).sort((a, b) =>
+    _utcToLocal(plans[a].executionTime || "00:00").localeCompare(_utcToLocal(plans[b].executionTime || "00:00"))
+  );
+  const rows = order.map(i => {
+    const plan = plans[i];
     const enabled = plan._enabled !== false;
     const dayLabel = _schedDayLabel(plan.repeatDay);
     const portions = plan.grainNum || 1;
@@ -973,6 +1095,9 @@ function wireDeviceTabHandlers(tabName) {
         setTimeout(() => { recordHousing.textContent = t("maint.record_housing"); renderDeviceTab("maintenance"); }, 1200);
       };
     }
+
+    const audioSelect = document.getElementById("maint-audio-select");
+    if (audioSelect) _wireFeedSoundControls(d, audioSelect);
 
     const resetFilter = document.getElementById("btn-reset-filter");
     const recordClean = document.getElementById("btn-record-clean");

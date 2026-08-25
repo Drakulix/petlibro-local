@@ -4,6 +4,7 @@ import asyncio
 import json
 import logging
 import os
+import re
 import uuid
 
 from aiohttp import web
@@ -18,7 +19,7 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name
 logging.getLogger("aiohttp.access").setLevel(logging.WARNING)
 _LOGGER = logging.getLogger(__name__)
 
-VERSION = "2026.08.4"
+VERSION = "2026.08.5"
 
 # Credential capture state
 _capture_state: dict = {"status": "idle", "result": {}}
@@ -90,6 +91,110 @@ async def handle_device_image(request):
             if os.path.exists(path):
                 return web.FileResponse(path)
     return web.Response(status=404)
+
+
+async def handle_audio_serve(request):
+    """Serve a custom feed sound. Checked in /data/audio first (user uploaded
+    or recorded) then /app/audio (bundled with the add-on), same fallback
+    pattern as handle_device_image. Unauthenticated by design, same as
+    /images -- this needs to be fetchable by the feeder itself over plain
+    HTTP, not just by the logged-in ingress session."""
+    name = request.match_info["name"]
+    if "/" in name or "\\" in name or name.startswith("."):
+        return web.Response(status=400)
+    for base_dir in ("/data/audio", "/app/audio"):
+        path = f"{base_dir}/{name}.aac"
+        if os.path.exists(path):
+            # aiohttp's normal access log is silenced (see logging setup at
+            # top of file) to cut noise from routine polling, so log fetches
+            # of this route explicitly -- it's the only direct evidence we
+            # get that a feeder actually requested a custom sound.
+            _LOGGER.info("Audio fetch: %s from %s", name, request.remote)
+            return web.FileResponse(path, headers={"Content-Type": "audio/aac"})
+    _LOGGER.info("Audio fetch (not found): %s from %s", name, request.remote)
+    return web.Response(status=404)
+
+
+async def handle_api_audio_list(request):
+    """List available custom feed sound names (without extension), user
+    uploaded/recorded ones first, then bundled ones not already overridden."""
+    import glob as _glob
+    names = []
+    for base_dir in ("/data/audio", "/app/audio"):
+        for f in sorted(_glob.glob(f"{base_dir}/*.aac")):
+            name = os.path.splitext(os.path.basename(f))[0]
+            if name not in names:
+                names.append(name)
+    return web.json_response(names)
+
+
+_AUDIO_NAME_RE = re.compile(r"^[a-z0-9_-]{1,40}$")
+
+
+async def handle_api_audio_upload(request):
+    """Accept an uploaded or recorded sound clip in any ffmpeg-readable format
+    and transcode it to AAC/ADTS, the format the feeder expects. Stored under
+    a user-chosen name so several clips (breakfast, lunch, dinner, etc.) can
+    coexist. multipart fields: name (text), file (binary)."""
+    reader = await request.multipart()
+    name = None
+    tmp_in = f"/tmp/audio_upload_{uuid.uuid4().hex}"
+    try:
+        async for field in reader:
+            if field.name == "name":
+                name = (await field.text()).strip().lower()
+            elif field.name == "file":
+                with open(tmp_in, "wb") as f:
+                    while True:
+                        chunk = await field.read_chunk()
+                        if not chunk:
+                            break
+                        f.write(chunk)
+        if not name or not _AUDIO_NAME_RE.match(name):
+            return web.Response(status=400, text="name must be 1-40 lowercase letters, digits, _ or -")
+        if not os.path.exists(tmp_in):
+            return web.Response(status=400, text="file required")
+
+        os.makedirs("/data/audio", exist_ok=True)
+        out_path = f"/data/audio/{name}.aac"
+        proc = await asyncio.create_subprocess_exec(
+            "ffmpeg", "-y", "-i", tmp_in, "-vn", "-acodec", "aac", "-b:a", "96k", "-f", "adts", out_path,
+            stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
+        )
+        _, stderr = await proc.communicate()
+        if proc.returncode != 0:
+            _LOGGER.warning("Audio transcode failed for %s: %s", name, stderr.decode(errors="replace")[-500:])
+            return web.Response(status=400, text="Could not read that audio file")
+        return web.json_response({"name": name})
+    finally:
+        if os.path.exists(tmp_in):
+            os.remove(tmp_in)
+
+
+async def handle_api_device_push_audio(request):
+    """Push a stored custom sound to a feeder as its audioUrl, using the
+    configured Local Audio Base URL (a plain LAN address, not the ingress
+    path, since the feeder itself has to fetch this, not a logged-in browser)."""
+    serial = request.match_info["serial"]
+    try:
+        data = await request.json()
+        name = (data.get("name") or "").strip().lower()
+    except Exception:
+        return web.Response(status=400, text="Bad request")
+    if not name or not _AUDIO_NAME_RE.match(name):
+        return web.Response(status=400, text="name required")
+
+    base_url = storage.get_settings().get("local_audio_base_url", "").strip()
+    if not base_url:
+        return web.Response(status=400, text="Set Local Audio Base URL in Settings first")
+    if not any(os.path.exists(f"{d}/{name}.aac") for d in ("/data/audio", "/app/audio")):
+        return web.Response(status=404, text="Sound not found")
+
+    audio_url = f"{base_url.rstrip('/')}/audio/{name}"
+    ok = await devices.send_command(serial, {"audioUrl": audio_url, "enableAudio": True})
+    if not ok:
+        return web.Response(status=400, text="Failed to send command")
+    return web.json_response({"status": "ok", "audio_url": audio_url})
 
 
 async def handle_locales_available(request):
@@ -674,6 +779,7 @@ def main():
     app.router.add_get("/locales/available",             handle_locales_available)
     app.router.add_get("/locales/{lang}.json",           handle_locale)
     app.router.add_get("/images/{name}",                 handle_device_image)
+    app.router.add_get("/audio/{name}",                  handle_audio_serve)
     app.router.add_get(r"/{name:[^/]+\.(js|css)}",       handle_static)
 
     app.router.add_get("/api/devices",                   handle_api_devices_get)
@@ -688,6 +794,10 @@ def main():
     app.router.add_get("/api/devices/{serial}/feeding-plans",  handle_api_feeding_plans_get)
     app.router.add_post("/api/devices/{serial}/feeding-plans", handle_api_feeding_plans_post)
     app.router.add_post("/api/devices/{serial}/image",         handle_api_device_image_upload)
+    app.router.add_post("/api/devices/{serial}/push-audio",    handle_api_device_push_audio)
+
+    app.router.add_get("/api/audio",                     handle_api_audio_list)
+    app.router.add_post("/api/audio",                    handle_api_audio_upload)
 
     app.router.add_get("/api/icons",                     handle_api_icons_get)
     app.router.add_post("/api/icons",                    handle_api_icons_post)

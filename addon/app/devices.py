@@ -309,7 +309,7 @@ async def send_feeding_plans(serial: str, plans: list) -> bool:
     })
     try:
         await _client_ref.publish(topic, payload)
-        _LOGGER.debug("FEEDING_PLAN_SERVICE sent to %s... (%d plans)", serial[:6], len(clean))
+        _LOGGER.info("FEEDING_PLAN_SERVICE sent to %s... (%d plans)", serial[:6], len(clean))
         return True
     except Exception:
         _LOGGER.exception("Failed to send feeding plans to %s...", serial[:6])
@@ -774,7 +774,7 @@ async def _respond_feeding_plan(serial: str, request_topic: str) -> None:
     })
     try:
         await _client_ref.publish(response_topic, payload)
-        _LOGGER.debug("Feeding plan response sent to %s...", serial[:6])
+        _LOGGER.info("Feeding plan response sent to %s... (%d plans)", serial[:6], len(clean_plans))
     except Exception:
         pass
 
@@ -1004,7 +1004,13 @@ async def _mqtt_loop():
                         continue
 
                     # Device telemetry: dl/{model}/{serial}/device/{channel}/post
-                    if parts[0] == "dl" and len(parts) >= 4:
+                    # Must check /post specifically -- dl/# also matches our own
+                    # outbound .../service/sub and .../event/sub command/ack
+                    # topics, and without this filter we'd receive our own
+                    # published messages back and reprocess them as if the
+                    # device sent them (e.g. re-acking our own DEVICE_START_EVENT
+                    # ack forever).
+                    if parts[0] == "dl" and len(parts) >= 4 and topic_str.endswith("/post"):
                         serial = parts[2]
                         recognized = serial in _devices
                         _raw_capture.append({

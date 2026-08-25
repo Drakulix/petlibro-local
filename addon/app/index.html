@@ -206,6 +206,19 @@
         <span class="save-indicator" id="save-indicator-mqtt" data-i18n="settings.saved">✓ Saved</span>
       </button>
       <div class="mqtt-status" id="mqtt-status"></div>
+
+      <div class="settings-section" style="margin-top:24px">
+        <h2 data-i18n="settings.audio_section">Custom Feed Sounds</h2>
+        <div class="form-row">
+          <label class="form-label" data-i18n="settings.local_audio_base_url">Local Audio Base URL</label>
+          <input class="form-input" id="s-local-audio-base-url" type="text" placeholder="http://192.168.1.64:8765">
+          <p class="form-hint" data-i18n="settings.local_audio_base_url_hint">A plain LAN address for this add-on, not the Home Assistant ingress link. Feeders fetch custom sounds directly over the network, they can't use your logged-in browser session. Required before you can push a custom sound to a feeder.</p>
+        </div>
+      </div>
+      <button class="btn-primary" id="btn-save-audio-settings">
+        <span data-i18n="settings.save">Save</span>
+        <span class="save-indicator" id="save-indicator-audio" data-i18n="settings.saved">✓ Saved</span>
+      </button>
     </div>
   </div>
 </main>
