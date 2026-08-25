@@ -141,10 +141,6 @@ def _mqtt_model(device_type: str) -> str:
     return _DEVICE_MODELS.get(device_type, device_type)
 
 
-def _topic_for(device_type: str, serial: str) -> str:
-    return f"dl/{_mqtt_model(device_type)}/{serial}/device/+/post"
-
-
 def _service_sub_topic(device_type: str, serial: str) -> str:
     return f"dl/{_mqtt_model(device_type)}/{serial}/device/service/sub"
 
@@ -964,10 +960,16 @@ async def _mqtt_loop():
                 import time as _time
                 _client_ref = client
                 import storage as _storage
+
+                # Subscribed once, up front: covers every device's own
+                # dl/{model}/{serial}/device/+/post topic on its own, so no
+                # per-device dl/ subscribe is needed below (that would create
+                # an overlapping subscription and cause the broker to deliver
+                # a duplicate copy of every message).
+                await client.subscribe("dl/#")
+
                 for serial, (_, device_type) in list(_devices.items()):
-                    topic = _topic_for(device_type, serial)
-                    await client.subscribe(topic)
-                    _LOGGER.info("Subscribed: %s... model=%s", serial[:6], _mqtt_model(device_type))
+                    _LOGGER.info("Registered: %s... model=%s", serial[:6], _mqtt_model(device_type))
                     svc_topic    = _service_sub_topic(device_type, serial)
                     init_payload = json.dumps({
                         "cmd":   "ATTR_GET_SERVICE",
@@ -986,11 +988,6 @@ async def _mqtt_loop():
                     await ha_mqtt.retract_legacy_entities(client, serial, cfg)
                     await ha_mqtt.publish_state(client, serial, cfg, state, plans=plans)
                     await ha_mqtt.publish_availability(client, serial, True)
-
-                # Always listen to all raw device traffic, not just configured
-                # devices' own topics, so unrecognized hardware still shows up
-                # in the debug capture for diagnostics.
-                await client.subscribe("dl/#")
 
                 async for message in client.messages:
                     if _reconnect_event and _reconnect_event.is_set():
