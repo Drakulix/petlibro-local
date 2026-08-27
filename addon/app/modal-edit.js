@@ -162,7 +162,11 @@ function populateRoomSelect(selectId, currentValue) {
 
 // ── Device type detection ─────────────────────────────────────────────────
 const DEVICE_TYPE_MAP = {
-  "WF02": { device_type: "dockstream2",         model: "WF02" },
+  // WF02 was previously mapped to dockstream2 (PLWF106) based on the device
+  // appearing as "Dockstream 2" in the PetLibro app; a real MQTT capture
+  // (GitHub issue #3) later showed this exact serial actually reports
+  // PLWF305 (RFID-capable), correcting the earlier assumption.
+  "WF02": { device_type: "dockstream_rfid",      model: "WF02" },
   "WF03": { device_type: "dockstream2",         model: "WF03" },
   "WF04": { device_type: "dockstream2_cordless", model: "WF04" },
   "AF06": { device_type: "one_rfid",             model: "AF06" },
@@ -170,11 +174,15 @@ const DEVICE_TYPE_MAP = {
 const DEVICE_MQTT_MODELS = {
   "dockstream2":          "plwf106",
   "dockstream2_cordless": "plwf116",
+  "dockstream_rfid":      "plwf305",
   "one_rfid":             "plaf301",
 };
 const DEVICE_VARIANTS = {
   "dockstream2":          [{ value: "b", label: "Black" }, { value: "w", label: "White" }],
   "dockstream2_cordless": [{ value: "b", label: "Black" }, { value: "w", label: "White" }],
+  // Only white confirmed so far, not certain there is a black variant. Add
+  // a black option back here if one turns up.
+  "dockstream_rfid":      [{ value: "w", label: "White" }],
   "one_rfid":             [{ value: "b", label: "Black" }, { value: "w", label: "White" }],
 };
 
@@ -206,6 +214,7 @@ function selectedPetIds(listId) {
 }
 
 function detectVariantFromSerial(serial, deviceType) {
+  if (deviceType === "dockstream_rfid") return "w"; // only white confirmed so far
   const isFountain = deviceType === "dockstream2" || deviceType === "dockstream2_cordless";
   if (isFountain && serial && serial.length >= 12) {
     const code = serial.substring(10, 12).toUpperCase();

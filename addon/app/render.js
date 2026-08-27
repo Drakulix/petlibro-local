@@ -40,7 +40,7 @@ function renderDevices() {
   const key = JSON.stringify(_devices.map(d => ({
     s: d.serial, o: d.online, w: d.currentWeight, i: d.intake_today_grams,
     f: d.filterNextReplacementTimestamp, r: d.rssi,
-    sg: d.surplusGrain, eq: d.electricQuantity, bd: d.barnDoorState,
+    sg: d.surplusGrain, eq: d.electricQuantity, pt: d.powerType, bd: d.barnDoorState,
     img: d.image_url, name: d.name, room: d.room,
     lct: d.last_cleaned_ts, lci: d.cleaning_interval_days,
     plans: (d.feeding_plans||[]).map(p=>p.executionTime+"_"+(p._enabled!==false?1:0)).join(),
@@ -109,7 +109,7 @@ function renderDevices() {
           </div>
           <div class="card-stat stat-secondary">
             <div class="stat-label">${t("card.battery")}</div>
-            <div class="stat-value${d.powerType !== 1 && d.electricQuantity != null && d.electricQuantity <= 20 ? " danger" : ""}">${d.powerType === 1 ? t("power.ac") : (d.electricQuantity != null ? d.electricQuantity + "%" : "—")}</div>
+            <div class="stat-value${d.electricQuantity != null && d.electricQuantity > 0 && d.electricQuantity <= (d.battery_low_pct ?? 20) ? " danger" : ""}">${d.electricQuantity != null && d.electricQuantity > 0 ? `${d.electricQuantity}% ${d.powerType === 2 ? t("power.battery") : t("power.ac")}` : (d.powerType === 1 ? t("power.ac") : "—")}</div>
           </div>
           ${(() => { const nm = nextMealLabel(d.feeding_plans); return nm ? `<div class="card-stat"><div class="stat-label">${t("card.next_meal")}</div><div class="stat-value">${escHtml(nm)}</div></div>` : ""; })()}
           ${(() => { if (!d.last_fed_ts) return ""; const lf = new Date(d.last_fed_ts * 1000); const now = new Date(); const diffH = (now - lf) / 3600000; let label; if (diffH < 1) label = t("time.ago_minutes", {n: Math.round(diffH * 60)}); else if (diffH < 24) label = _fmt12h(lf.getHours(), lf.getMinutes()); else label = t(_WDAY_KEYS[lf.getDay()]) + " " + _fmt12h(lf.getHours(), lf.getMinutes()); return `<div class="card-stat"><div class="stat-label">${t("card.last_fed")}</div><div class="stat-value">${escHtml(label)}</div></div>`; })()}

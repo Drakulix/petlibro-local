@@ -38,6 +38,197 @@ async function downloadDebugCapture() {
   }
 }
 
+// ── Audio library (Settings → Audio tab) ────────────────────────────────────
+let _audioPreviewEl = null;
+let _audioPreviewPlayingName = null;
+
+function _toggleAudioPreview(name, btn) {
+  if (!_audioPreviewEl) {
+    _audioPreviewEl = new Audio();
+    _audioPreviewEl.onended = () => _setPlayButtonState(null);
+  }
+  if (_audioPreviewPlayingName === name) {
+    _audioPreviewEl.pause();
+    _setPlayButtonState(null);
+    return;
+  }
+  _audioPreviewEl.src = `${BASE}/audio/${encodeURIComponent(name)}`;
+  _audioPreviewEl.play().catch(() => {});
+  _setPlayButtonState(name);
+}
+
+function _setPlayButtonState(playingName) {
+  _audioPreviewPlayingName = playingName;
+  document.querySelectorAll(".btn-audio-play").forEach(b => {
+    b.textContent = b.dataset.name === playingName ? "⏸" : "▶";
+  });
+}
+
+async function renderAudioLibrary() {
+  const list = document.getElementById("audio-library-list");
+  if (!list) return;
+  try {
+    const names = await api("GET", "/api/audio");
+    const sorted = [...names].sort((a, b) => a.localeCompare(b));
+    list.innerHTML = sorted.length
+      ? sorted.map(n => `
+        <div style="display:flex;align-items:center;justify-content:space-between;background:var(--pl-surface2);border:1px solid var(--pl-border);border-radius:8px;padding:8px 12px;gap:8px">
+          <span style="flex:1">${escHtml(n)}</span>
+          <button class="btn-audio-play" data-name="${escHtml(n)}" title="${t("settings.audio_play")}" style="background:none;border:none;cursor:pointer;padding:4px;color:var(--pl-accent);font-size:16px;line-height:1;flex-shrink:0">▶</button>
+          <button class="btn-audio-delete" data-name="${escHtml(n)}" title="${t("settings.audio_delete")}" style="background:none;border:none;cursor:pointer;padding:4px;color:var(--pl-danger,#e05252);font-size:16px;line-height:1;opacity:0.8">&#x2715;</button>
+        </div>`).join("")
+      : `<p class="form-hint">${t("settings.audio_library_empty")}</p>`;
+    list.querySelectorAll(".btn-audio-play").forEach(btn => {
+      btn.onclick = () => _toggleAudioPreview(btn.dataset.name, btn);
+    });
+    list.querySelectorAll(".btn-audio-delete").forEach(btn => {
+      btn.onclick = async () => {
+        if (!confirm(t("settings.audio_delete_confirm", {name: btn.dataset.name}))) return;
+        if (_audioPreviewPlayingName === btn.dataset.name) { _audioPreviewEl?.pause(); _setPlayButtonState(null); }
+        try {
+          await api("DELETE", `/api/audio/${encodeURIComponent(btn.dataset.name)}`);
+          await renderAudioLibrary();
+        } catch(e) { alert(t("settings.audio_delete_failed", {error: e.message})); }
+      };
+    });
+  } catch {
+    list.innerHTML = `<p class="form-hint">${t("settings.audio_library_load_failed")}</p>`;
+  }
+}
+
+async function uploadAudioBlob(blob, filename, statusEl, nameInput, defaultName) {
+  const typed = (nameInput.value || "").trim().toLowerCase().replace(/[^a-z0-9_-]/g, "");
+  const fallback = (defaultName || "").trim().toLowerCase().replace(/[^a-z0-9_-]/g, "");
+  const name = typed || fallback;
+  if (!name) { statusEl.textContent = t("maint.name_required"); return false; }
+  statusEl.textContent = t("maint.uploading");
+  try {
+    const formData = new FormData();
+    formData.append("name", name);
+    formData.append("file", blob, filename);
+    const r = await fetch(`${BASE}/api/audio`, { method: "POST", body: formData });
+    if (!r.ok) throw new Error(await r.text());
+    statusEl.textContent = t("maint.upload_success");
+    nameInput.value = "";
+    await renderAudioLibrary();
+    return true;
+  } catch(e) {
+    statusEl.textContent = t("maint.upload_failed", {error: e.message});
+    return false;
+  }
+}
+
+function wireAudioSettingsControls() {
+  const uploadBtn  = document.getElementById("btn-audio-upload-file");
+  const fileInput  = document.getElementById("audio-file-input");
+  const recordBtn  = document.getElementById("btn-audio-record");
+  const nameInput  = document.getElementById("audio-new-name");
+  const statusEl   = document.getElementById("audio-status");
+
+  if (uploadBtn && fileInput) {
+    uploadBtn.onclick = () => fileInput.click();
+    fileInput.onchange = () => {
+      const file = fileInput.files[0];
+      if (file) {
+        // Default to the file's own name (extension stripped) if the New
+        // Sound Name field is left blank, no reason to force typing one.
+        const stem = file.name.replace(/\.[^.]+$/, "");
+        uploadAudioBlob(file, file.name, statusEl, nameInput, stem);
+      }
+      fileInput.value = "";
+    };
+  }
+
+  if (recordBtn) recordBtn.onclick = openRecordAudioModal;
+
+  const closeRecordBtn = document.getElementById("btn-close-record-audio");
+  if (closeRecordBtn) closeRecordBtn.onclick = closeRecordAudioModal;
+}
+
+// ── Record Sound modal ───────────────────────────────────────────────────
+let _recordMediaRecorder = null;
+let _recordChunks = [];
+let _recordBlob = null;
+
+function openRecordAudioModal() {
+  _recordBlob = null;
+  document.getElementById("record-audio-name").value = "";
+  document.getElementById("record-audio-status").textContent = "";
+  document.getElementById("record-audio-preview-wrap").style.display = "none";
+  document.getElementById("record-audio-preview").src = "";
+  const toggleBtn = document.getElementById("btn-record-toggle");
+  toggleBtn.textContent = t("maint.record");
+  toggleBtn.disabled = false;
+  document.getElementById("btn-record-save").disabled = true;
+
+  const statusEl = document.getElementById("record-audio-status");
+  // Same secure-context check as before, just surfaced up front in the
+  // modal instead of only after clicking Record.
+  if (!navigator.mediaDevices?.getUserMedia) {
+    statusEl.textContent = t("settings.audio_record_insecure");
+    toggleBtn.disabled = true;
+  }
+
+  toggleBtn.onclick = async () => {
+    if (_recordMediaRecorder && _recordMediaRecorder.state === "recording") {
+      _recordMediaRecorder.stop();
+      return;
+    }
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      _recordChunks = [];
+      // Mobile browsers (especially iOS Safari/WebKit) often don't support
+      // MediaRecorder's default mimeType at all, and can silently produce
+      // zero data instead of throwing. Explicitly pick the first format the
+      // browser actually claims to support rather than trusting the default.
+      const candidates = ["audio/webm;codecs=opus", "audio/webm", "audio/mp4", "audio/aac", "audio/ogg;codecs=opus"];
+      const mimeType = candidates.find(c => window.MediaRecorder?.isTypeSupported?.(c));
+      _recordMediaRecorder = mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream);
+      _recordMediaRecorder.ondataavailable = (e) => { if (e.data.size > 0) _recordChunks.push(e.data); };
+      _recordMediaRecorder.onstop = () => {
+        stream.getTracks().forEach(track => track.stop());
+        toggleBtn.textContent = t("maint.record");
+        _recordBlob = new Blob(_recordChunks, { type: _recordMediaRecorder.mimeType || mimeType || "audio/webm" });
+        if (_recordBlob.size === 0) {
+          statusEl.textContent = t("settings.audio_record_empty");
+          document.getElementById("record-audio-preview-wrap").style.display = "none";
+          document.getElementById("btn-record-save").disabled = true;
+          return;
+        }
+        const preview = document.getElementById("record-audio-preview");
+        preview.src = URL.createObjectURL(_recordBlob);
+        document.getElementById("record-audio-preview-wrap").style.display = "";
+        document.getElementById("btn-record-save").disabled = false;
+        statusEl.textContent = "";
+      };
+      // Timeslice so data flushes periodically instead of only at the very
+      // end -- some mobile browsers handle very short single-chunk
+      // recordings unreliably otherwise.
+      _recordMediaRecorder.start(500);
+      toggleBtn.textContent = t("maint.recording_stop");
+      statusEl.textContent = t("maint.recording_in_progress");
+    } catch(e) {
+      statusEl.textContent = t("maint.mic_denied", {error: e.message});
+    }
+  };
+
+  document.getElementById("btn-record-save").onclick = async () => {
+    if (!_recordBlob) return;
+    const nameInput = document.getElementById("record-audio-name");
+    const ok = await uploadAudioBlob(_recordBlob, "recording.webm", statusEl, nameInput, "");
+    if (ok) closeRecordAudioModal();
+  };
+
+  document.getElementById("modal-record-audio").classList.add("open");
+}
+
+function closeRecordAudioModal() {
+  if (_recordMediaRecorder && _recordMediaRecorder.state === "recording") {
+    _recordMediaRecorder.stop();
+  }
+  document.getElementById("modal-record-audio").classList.remove("open");
+}
+
 // ── Settings ──────────────────────────────────────────────────────────────
 function renderSettings() {
   document.getElementById("s-mqtt-host").value = _settings.mqtt_host || "";

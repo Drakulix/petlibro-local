@@ -21,10 +21,11 @@ _MANUFACTURER     = "PetLibro"
 _MODEL_NAMES = {
     "dockstream2":          "Dockstream 2 Smart Fountain",
     "dockstream2_cordless": "Dockstream 2 Cordless Fountain",
+    "dockstream_rfid":      "Dockstream RFID Smart Fountain",
     "one_rfid":             "One RFID Smart Feeder",
 }
 
-_FOUNTAIN_TYPES = {"dockstream2", "dockstream2_cordless"}
+_FOUNTAIN_TYPES = {"dockstream2", "dockstream2_cordless", "dockstream_rfid"}
 
 # Built-in icon names — keep in sync with display_matrix.ICON_FRAMES keys.
 # "None" (id 0) means revert to text mode. -1 = custom frame (salute etc.)
@@ -174,6 +175,22 @@ def _entity_configs(serial: str, cfg: dict, state: dict, extra_icon_names: list[
 
     # ── Feeder ────────────────────────────────────────────────────────────
     elif device_type == "one_rfid":
+        entities.append(("sensor", "battery", _e(serial, "battery", b, {
+            "name":                "Battery",
+            "state_topic":         state_topic(serial, "battery"),
+            "unit_of_measurement": "%",
+            "device_class":        "battery",
+            "state_class":         "measurement",
+        })))
+
+        entities.append(("binary_sensor", "on_ac_power", _e(serial, "on_ac_power", b, {
+            "name":         "On AC Power",
+            "state_topic":  state_topic(serial, "on_ac_power"),
+            "device_class": "plug",
+            "payload_on":   "ON",
+            "payload_off":  "OFF",
+        })))
+
         entities.append(("sensor", "last_fed", _e(serial, "last_fed", b, {
             "name":         "Last Fed",
             "state_topic":  state_topic(serial, "last_fed"),
@@ -394,6 +411,16 @@ async def publish_state(client, serial: str, cfg: dict, state: dict, plans: list
 
     # Feeder
     elif device_type == "one_rfid":
+        if "electricQuantity" in state:
+            await client.publish(state_topic(serial, "battery"), str(state["electricQuantity"]), retain=True)
+
+        if "powerType" in state:
+            # powerType: 2 = battery, 3 = AC (confirmed via direct testing
+            # and matching io:35 AC-presence sensor logs). 1 has never been
+            # observed. Treat anything other than a confirmed 2 as AC.
+            val = "OFF" if state["powerType"] == 2 else "ON"
+            await client.publish(state_topic(serial, "on_ac_power"), val, retain=True)
+
         last_fed = cfg.get("last_fed_ts")
         if last_fed:
             dt = datetime.datetime.fromtimestamp(int(last_fed), tz=datetime.timezone.utc)

@@ -2,6 +2,7 @@
 function switchSettingsTab(name) {
   document.querySelectorAll(".stab").forEach(b => b.classList.toggle("active", b.dataset.stab === name));
   document.querySelectorAll(".stab-panel").forEach(p => p.classList.toggle("active", p.id === `stab-${name}`));
+  if (name === "audio") renderAudioLibrary();
 }
 
 function switchTab(name) {
@@ -192,6 +193,7 @@ async function detectLanguage(availableLangs) {
   document.getElementById("btn-save-notifications").addEventListener("click", () => saveSettings("notifications"));
   document.getElementById("btn-save-mqtt").addEventListener("click", () => saveSettings("mqtt"));
   document.getElementById("btn-save-audio-settings").addEventListener("click", () => saveSettings("audio"));
+  wireAudioSettingsControls();
   document.getElementById("btn-banner-mqtt").addEventListener("click", () => {
     switchTab("settings");
     switchSettingsTab("mqtt");
@@ -213,7 +215,12 @@ async function detectLanguage(availableLangs) {
   // Backdrop click to close modals
   document.querySelectorAll(".modal-backdrop").forEach(bd => {
     bd.addEventListener("click", e => {
-      if (e.target === bd) { bd.classList.remove("open"); stopCapturePolling(); }
+      if (e.target !== bd) return;
+      // Recording modal needs its own close path so a click-outside while
+      // actively recording actually stops the mic stream, not just hides it.
+      if (bd.id === "modal-record-audio") { closeRecordAudioModal(); return; }
+      bd.classList.remove("open");
+      stopCapturePolling();
     });
   });
 

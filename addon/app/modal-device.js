@@ -26,6 +26,15 @@ function openDeviceModal(device) {
     fwEl.style.display = "none";
   }
 
+  const powerEl = document.getElementById("detail-power");
+  if (device.device_type === "one_rfid" && device.electricQuantity != null && device.electricQuantity > 0) {
+    const onAC = device.powerType !== 2;
+    powerEl.textContent = onAC ? `🔌 ${t("power.ac")}` : `🔋 ${device.electricQuantity}%`;
+    powerEl.style.display = "";
+  } else {
+    powerEl.style.display = "none";
+  }
+
   const isFeeder = device.device_type === "one_rfid";
   document.querySelectorAll(".dtab").forEach(b => {
     b.classList.toggle("active", b.dataset.dtab === "overview");
@@ -144,8 +153,10 @@ function buildOverviewTab(device) {
   if (device.device_type === "one_rfid") {
     const foodOk     = device.surplusGrain;
     const foodClass  = foodOk === false ? "danger" : "accent";
-    const powerIsAC  = device.powerType === 1;
-    const battClass  = !powerIsAC && device.electricQuantity != null && device.electricQuantity <= 20 ? "danger" : "";
+    const powerIsAC  = device.powerType !== 2;
+    const hasBattery = device.electricQuantity != null && device.electricQuantity > 0;
+    const lowPct     = device.battery_low_pct ?? 20;
+    const battClass  = hasBattery && device.electricQuantity <= lowPct ? "danger" : "";
     const closeSpeed = device.coverCloseSpeed ?? "FAST";
     const openMode   = device.coverOpenMode   ?? "CUSTOM";
     const closeSec   = device.closeDoorTimeSec ?? 10;
@@ -153,7 +164,9 @@ function buildOverviewTab(device) {
     const soundOn    = device.soundSwitch !== false;
     const volume     = device.volume ?? 50;
     const foodLabel = foodOk === false ? t("food.low") : foodOk === true ? t("food.ok") : "—";
-    const battPct  = powerIsAC ? t("power.ac") : (device.electricQuantity != null ? device.electricQuantity + "%" : "—");
+    const battPct  = hasBattery
+      ? `${device.electricQuantity}% (${powerIsAC ? t("power.ac") : t("power.battery")})`
+      : (powerIsAC ? t("power.ac") : "—");
     return `<div class="detail-stats">
       <div class="detail-stat" style="padding:8px 14px">
         <div class="detail-stat-label">${t("overview.food_level")}</div>
@@ -299,6 +312,14 @@ function buildMaintenanceTab(device) {
       <button class="btn-secondary" id="btn-record-housing" style="flex-shrink:0">${t("maint.record_housing")}</button>
     </div>
 
+    <div class="tab-section-heading">${t("maint.battery")}</div>
+    <div class="form-row">
+      <label class="form-label">${t("maint.battery_low_threshold")}</label>
+      <input class="form-input" id="maint-battery-low" type="number" min="1" max="99" value="${device.battery_low_pct ?? 20}">
+    </div>
+    <p class="form-hint">${t("maint.battery_low_hint")}</p>
+    <button class="btn-secondary" id="btn-save-battery-low" style="width:100%;margin-bottom:18px">${t("maint.save_threshold")}</button>
+
     <div class="tab-section-heading">${t("maint.feed_sounds")}</div>
     <p class="form-hint">${t("maint.feed_sounds_hint")}</p>
     <div class="form-row">
@@ -307,15 +328,7 @@ function buildMaintenanceTab(device) {
         <option value="" data-i18n="maint.feed_sound_loading">${t("maint.feed_sound_loading")}</option>
       </select>
     </div>
-    <button class="btn-secondary" id="btn-push-audio" style="width:100%;margin-bottom:18px">${t("maint.push_sound")}</button>
-
-    <label class="form-label">${t("maint.new_sound_name")}</label>
-    <input class="form-input" id="maint-audio-name" type="text" placeholder="breakfast" maxlength="40" style="margin-bottom:8px">
-    <div style="display:flex;gap:8px">
-      <button class="btn-secondary" id="btn-audio-upload-file" style="flex:1">${t("maint.upload_file")}</button>
-      <button class="btn-secondary" id="btn-audio-record" style="flex:1">${t("maint.record")}</button>
-    </div>
-    <input type="file" id="maint-audio-file-input" accept="audio/*,.aac" style="display:none">
+    <button class="btn-secondary" id="btn-push-audio" style="width:100%">${t("maint.push_sound")}</button>
     <p class="form-hint" id="maint-audio-status"></p>`;
   }
 
@@ -379,42 +392,19 @@ function buildMaintenanceTab(device) {
 // ── Custom feed sounds (feeder maintenance tab) ────────────────────────────
 async function _wireFeedSoundControls(device, selectEl) {
   const statusEl = document.getElementById("maint-audio-status");
-  const nameInput = document.getElementById("maint-audio-name");
-  const fileInput = document.getElementById("maint-audio-file-input");
-  const pushBtn   = document.getElementById("btn-push-audio");
-  const uploadBtn = document.getElementById("btn-audio-upload-file");
-  const recordBtn = document.getElementById("btn-audio-record");
+  const pushBtn  = document.getElementById("btn-push-audio");
 
-  async function refreshList(selectName) {
+  async function refreshList() {
     try {
       const names = await api("GET", "/api/audio");
       selectEl.innerHTML = names.length
         ? names.map(n => `<option value="${escHtml(n)}">${escHtml(n)}</option>`).join("")
         : `<option value="">${t("maint.feed_sound_none")}</option>`;
-      if (selectName && names.includes(selectName)) selectEl.value = selectName;
     } catch {
       selectEl.innerHTML = `<option value="">${t("maint.feed_sound_none")}</option>`;
     }
   }
   await refreshList();
-
-  async function uploadBlob(blob, filename) {
-    const name = (nameInput.value || "").trim().toLowerCase().replace(/[^a-z0-9_-]/g, "");
-    if (!name) { statusEl.textContent = t("maint.name_required"); return; }
-    statusEl.textContent = t("maint.uploading");
-    try {
-      const formData = new FormData();
-      formData.append("name", name);
-      formData.append("file", blob, filename);
-      const r = await fetch(`${BASE}/api/audio`, { method: "POST", body: formData });
-      if (!r.ok) throw new Error(await r.text());
-      statusEl.textContent = t("maint.upload_success");
-      nameInput.value = "";
-      await refreshList(name);
-    } catch(e) {
-      statusEl.textContent = t("maint.upload_failed", {error: e.message});
-    }
-  }
 
   if (pushBtn) {
     pushBtn.onclick = async () => {
@@ -429,43 +419,6 @@ async function _wireFeedSoundControls(device, selectEl) {
         statusEl.textContent = t("maint.push_failed", {error: e.message});
       } finally {
         pushBtn.disabled = false;
-      }
-    };
-  }
-
-  if (uploadBtn && fileInput) {
-    uploadBtn.onclick = () => fileInput.click();
-    fileInput.onchange = () => {
-      const file = fileInput.files[0];
-      if (file) uploadBlob(file, file.name);
-      fileInput.value = "";
-    };
-  }
-
-  if (recordBtn) {
-    let mediaRecorder = null;
-    let chunks = [];
-    recordBtn.onclick = async () => {
-      if (mediaRecorder && mediaRecorder.state === "recording") {
-        mediaRecorder.stop();
-        return;
-      }
-      try {
-        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-        chunks = [];
-        mediaRecorder = new MediaRecorder(stream);
-        mediaRecorder.ondataavailable = (e) => { if (e.data.size > 0) chunks.push(e.data); };
-        mediaRecorder.onstop = () => {
-          stream.getTracks().forEach(track => track.stop());
-          recordBtn.textContent = t("maint.record");
-          const blob = new Blob(chunks, { type: mediaRecorder.mimeType || "audio/webm" });
-          uploadBlob(blob, "recording.webm");
-        };
-        mediaRecorder.start();
-        recordBtn.textContent = t("maint.recording_stop");
-        statusEl.textContent = t("maint.recording_in_progress");
-      } catch(e) {
-        statusEl.textContent = t("maint.mic_denied", {error: e.message});
       }
     };
   }
@@ -547,6 +500,8 @@ function buildFountainLogTab(device, entries) {
     </div>`;
   }
 
+  const solePetName = (device.pets && device.pets.length === 1) ? device.pets[0].name : null;
+
   let lastDate = null;
   const rows = entries.map(e => {
     const dateLabel = fmtDate(e.ts);
@@ -556,7 +511,11 @@ function buildFountainLogTab(device, entries) {
     lastDate = dateLabel;
 
     let line;
-    if (e.type === "drink") {
+    if (e.type === "drink" && e.rfid_tag) {
+      const matched = (device.pets || []).find(p => p.id === e.pet_id);
+      const who = matched ? matched.name : (solePetName || t("pet.unnamed"));
+      line = `<span style="color:var(--pl-subtext)">${escHtml(fmtTime(e.ts))}</span> ${t("log.pet_drank", {name: escHtml(who), volume: escHtml(fmtWater(e.grams))})}`;
+    } else if (e.type === "drink") {
       line = `<span style="color:var(--pl-subtext)">${escHtml(fmtTime(e.ts))}</span> ${t("log.drink", {volume: escHtml(fmtWater(e.grams))})}`;
     } else {
       line = `<span style="color:var(--pl-subtext)">${escHtml(fmtTime(e.ts))}</span> ${escHtml(e.type)}`;
@@ -793,6 +752,8 @@ function buildNotificationsTab(device) {
     { key: "desiccant_due", label: t("notif.desiccant_due") },
     { key: "bowl_due",      label: t("notif.bowl_due") },
     { key: "housing_due",   label: t("notif.housing_due") },
+    { key: "power_battery", label: t("notif.power_battery") },
+    { key: "battery_low",   label: t("notif.battery_low") },
     { key: "offline",       label: t("notif.offline") },
   ] : [
     { key: "water_low",    label: t("notif.water_low") },
@@ -844,7 +805,7 @@ function buildNotificationsTab(device) {
     </div>
   </div>
 
-  <button class="btn-primary" id="btn-save-notifications">${t("notif.save")}</button>`;
+  <button class="btn-primary" id="btn-save-device-notifications">${t("notif.save")}</button>`;
 }
 
 // ── Wire device tab handlers ──────────────────────────────────────────────
@@ -1038,6 +999,16 @@ function wireDeviceTabHandlers(tabName) {
         _patchDevice(d.serial, { last_housing_cleaned_ts: last_ts, housing_cleaning_interval_days: interval });
       };
     }
+    const saveBatteryLow = document.getElementById("btn-save-battery-low");
+    if (saveBatteryLow) {
+      saveBatteryLow.onclick = async () => {
+        const val = Math.max(1, Math.min(99, parseInt(document.getElementById("maint-battery-low").value) || 20));
+        await api("POST", `/api/devices/${d.serial}`, { battery_low_pct: val });
+        _patchDevice(d.serial, { battery_low_pct: val });
+        saveBatteryLow.textContent = t("overview.saved");
+        setTimeout(() => { saveBatteryLow.textContent = t("maint.save_threshold"); }, 1500);
+      };
+    }
 
     // Fountain: editable days-remaining inputs auto-save on change
     const filterDaysEl = document.getElementById("maint-filter-days");
@@ -1165,7 +1136,7 @@ function wireDeviceTabHandlers(tabName) {
     if (emailCb && emailSec) emailCb.onchange = () => { emailSec.style.display = emailCb.checked ? "" : "none"; };
     if (mobileCb && mobileSec) mobileCb.onchange = () => { mobileSec.style.display = mobileCb.checked ? "" : "none"; };
 
-    const saveBtn = document.getElementById("btn-save-notifications");
+    const saveBtn = document.getElementById("btn-save-device-notifications");
     if (saveBtn) {
       saveBtn.onclick = async () => {
         const notif = {};

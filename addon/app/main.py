@@ -19,7 +19,7 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name
 logging.getLogger("aiohttp.access").setLevel(logging.WARNING)
 _LOGGER = logging.getLogger(__name__)
 
-VERSION = "2026.08.5"
+VERSION = "2026.08.6"
 
 # Credential capture state
 _capture_state: dict = {"status": "idle", "result": {}}
@@ -102,8 +102,13 @@ async def handle_audio_serve(request):
     name = request.match_info["name"]
     if "/" in name or "\\" in name or name.startswith("."):
         return web.Response(status=400)
+    # Accept the name with or without ".aac" -- but always build the pushed
+    # audioUrl (see handle_api_device_push_audio) with the extension included,
+    # since every real PetLibro audioUrl we've captured ends in .aac and the
+    # feeder's firmware may key off that when deciding how to fetch/decode it.
+    stem = name[:-4] if name.lower().endswith(".aac") else name
     for base_dir in ("/data/audio", "/app/audio"):
-        path = f"{base_dir}/{name}.aac"
+        path = f"{base_dir}/{stem}.aac"
         if os.path.exists(path):
             # aiohttp's normal access log is silenced (see logging setup at
             # top of file) to cut noise from routine polling, so log fetches
@@ -157,8 +162,17 @@ async def handle_api_audio_upload(request):
 
         os.makedirs("/data/audio", exist_ok=True)
         out_path = f"/data/audio/{name}.aac"
+        # -ar/-ac pinned to match PetLibro's own come_to_eat.aac exactly
+        # (44100 Hz, stereo, confirmed by parsing its real ADTS header).
+        # Without forcing these, the output inherits whatever rate the input
+        # happened to use (e.g. 48000 Hz from Windows' Sound Recorder), and
+        # if the feeder's decoder doesn't actually read the rate back out of
+        # the ADTS header, playback speed drifts with it -- a 48000-sourced
+        # file played through a fixed-44100 pipeline runs about 9% fast,
+        # matching the "sounds sped up" symptom seen with an M4A upload.
         proc = await asyncio.create_subprocess_exec(
-            "ffmpeg", "-y", "-i", tmp_in, "-vn", "-acodec", "aac", "-b:a", "96k", "-f", "adts", out_path,
+            "ffmpeg", "-y", "-i", tmp_in, "-vn", "-acodec", "aac", "-b:a", "96k",
+            "-ar", "44100", "-ac", "2", "-f", "adts", out_path,
             stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
         )
         _, stderr = await proc.communicate()
@@ -169,6 +183,20 @@ async def handle_api_audio_upload(request):
     finally:
         if os.path.exists(tmp_in):
             os.remove(tmp_in)
+
+
+async def handle_api_audio_delete(request):
+    """Delete a stored custom sound. Only removes user uploaded/recorded
+    files under /data/audio -- a bundled /app/audio default can't be deleted
+    this way (there isn't one bundled yet, but keeping the boundary clear)."""
+    name = request.match_info["name"]
+    if not _AUDIO_NAME_RE.match(name):
+        return web.Response(status=400, text="Bad request")
+    path = f"/data/audio/{name}.aac"
+    if os.path.exists(path):
+        os.remove(path)
+        return web.json_response({"status": "ok"})
+    return web.Response(status=404)
 
 
 async def handle_api_device_push_audio(request):
@@ -190,7 +218,7 @@ async def handle_api_device_push_audio(request):
     if not any(os.path.exists(f"{d}/{name}.aac") for d in ("/data/audio", "/app/audio")):
         return web.Response(status=404, text="Sound not found")
 
-    audio_url = f"{base_url.rstrip('/')}/audio/{name}"
+    audio_url = f"{base_url.rstrip('/')}/audio/{name}.aac"
     ok = await devices.send_command(serial, {"audioUrl": audio_url, "enableAudio": True})
     if not ok:
         return web.Response(status=400, text="Failed to send command")
@@ -597,9 +625,10 @@ async def handle_api_diag_debug_capture(request):
         lines.append(f"Covering {span_start} through {span_end}")
     lines.append("")
     for m in messages:
-        ts_str = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(m["ts"]))
-        tag    = "" if m["recognized"] else "[UNRECOGNIZED] "
-        lines.append(f"[{ts_str}] {tag}{m['topic']}: {m['payload']}")
+        ts_str  = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(m["ts"]))
+        tag     = "" if m["recognized"] else "[UNRECOGNIZED] "
+        payload = devices.redact_payload(m["payload"])
+        lines.append(f"[{ts_str}] {tag}{m['topic']}: {payload}")
     body = "\n".join(lines) + "\n"
 
     filename = f"petlibro-debug-capture-{time.strftime('%Y%m%dT%H%M%S')}.log"
@@ -644,8 +673,8 @@ async def handle_api_pet_log(request):
         pet_ids = cfg.get("pet_ids", [])
         if pet_id not in pet_ids:
             continue
-        log = storage.get_feeder_log(serial, limit)
         sole_pet = (len(pet_ids) == 1 and pet_id in pet_ids)
+        log = storage.get_feeder_log(serial, limit)
         for entry in log:
             entry_rfid = str(entry.get("rfid_tag")) if entry.get("rfid_tag") else None
             if (
@@ -655,6 +684,25 @@ async def handle_api_pet_log(request):
             ):
                 events.append({**entry, "serial": serial,
                                 "device_name": cfg.get("name") or serial[:8]})
+
+        if cfg.get("device_type", "").startswith("dockstream"):
+            flog = storage.get_fountain_log(serial, limit)
+            for entry in flog:
+                entry_rfid = str(entry.get("rfid_tag")) if entry.get("rfid_tag") else None
+                # Only RFID-confirmed drinks count as this pet's activity --
+                # same rule as the feeder's pet_eating entries, which only
+                # ever exist when an RFID scan triggered them in the first
+                # place. A plain weight-drop "drink" with no rfid_tag is
+                # never attributed, even in a single-pet household.
+                if not entry_rfid:
+                    continue
+                if (
+                    entry.get("pet_id") == pet_id
+                    or (pet_rfid and entry_rfid == pet_rfid)
+                    or sole_pet
+                ):
+                    events.append({**entry, "serial": serial,
+                                    "device_name": cfg.get("name") or serial[:8]})
     events.sort(key=lambda e: e.get("ts", 0), reverse=True)
     return web.json_response(events[:limit])
 
@@ -798,6 +846,7 @@ def main():
 
     app.router.add_get("/api/audio",                     handle_api_audio_list)
     app.router.add_post("/api/audio",                    handle_api_audio_upload)
+    app.router.add_delete("/api/audio/{name}",           handle_api_audio_delete)
 
     app.router.add_get("/api/icons",                     handle_api_icons_get)
     app.router.add_post("/api/icons",                    handle_api_icons_post)

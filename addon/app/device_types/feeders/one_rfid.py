@@ -11,6 +11,8 @@ ALERT_MESSAGES = {
     "desiccant_due": "Desiccant needs replacing.",
     "bowl_due":      "Food bowl needs cleaning.",
     "housing_due":   "Feeder housing needs cleaning.",
+    "power_battery": "Running on battery power (AC lost).",
+    "battery_low":   "Backup battery is low.",
 }
 
 DEFAULT_NOTIFICATIONS = {
@@ -18,6 +20,8 @@ DEFAULT_NOTIFICATIONS = {
     "desiccant_due": True,
     "bowl_due":      True,
     "housing_due":   True,
+    "power_battery": True,
+    "battery_low":   True,
 }
 
 
@@ -50,6 +54,25 @@ def compute_alerts(state: dict, cfg: dict, online: bool) -> set:
             elapsed = (_time.time() - last_ts / 1000) / 86400
             if elapsed >= interval:
                 alerts.add("housing_due")
+    if notif.get("power_battery", True):
+        # Opportunistic: this feeder appears to drop WiFi shortly after
+        # losing AC power to save the battery, so this typically only
+        # catches the single transient state update sent right at the
+        # transition, not a sustained live signal (and even that live push
+        # isn't always sent in time -- the DEVICE_LOG_REPORT_EVENT io:35
+        # handler in devices.py is the reliable fallback for accurate
+        # lost/restored timing). Real outages mostly show up as the existing
+        # "offline" alert instead.
+        # powerType: 2 = battery, 3 = AC (confirmed via direct testing and
+        # matching io:35 AC-presence sensor logs). 1 has never been observed
+        # in any capture.
+        if state.get("powerType") == 2:
+            alerts.add("power_battery")
+    if notif.get("battery_low", True):
+        pct = state.get("electricQuantity")
+        threshold = cfg.get("battery_low_pct", 20)
+        if pct is not None and pct > 0 and pct <= threshold:
+            alerts.add("battery_low")
     return alerts
 
 

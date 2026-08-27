@@ -39,14 +39,14 @@ If you are not comfortable with these terms, do not use this software.
 |--------|--------------|------------|--------|
 | Dockstream 2 Smart Fountain (black) | WF03...BD... | PLWF106 | Supported |
 | Dockstream 2 Smart Fountain (white) | WF03...BA... | PLWF106 | Supported |
-| Dockstream 2 Smart Fountain (white, alt. hardware revision) | WF02... | PLWF106 | Supported |
 | Dockstream 2 Cordless Fountain (black) | WF04...BD... (inferred) | PLWF116 | Beta |
 | Dockstream 2 Cordless Fountain (white) | WF04...BA... (inferred) | PLWF116 | Beta |
+| Dockstream RFID Smart Fountain | WF02 | PLWF305 | Beta |
 | One RFID Smart Feeder | AF06 | PLAF301 | Supported |
 
-**Color variant encoding:** On the Dockstream 2, I think the serial number encodes the color variant. The characters at positions 10–11 appear to indicate color: `BD` = black, `BA` = white. This does not hold for the `WF02` serial variant confirmed below, so the encoding may differ by hardware revision. If other owners of the Dockstream 2 fountains could also let me know by opening an issue. 
+**Color variant encoding:** On the Dockstream 2, I think the serial number encodes the color variant. The characters at positions 10–11 appear to indicate color: `BD` = black, `BA` = white. If other owners of the Dockstream 2 fountains could also let me know by opening an issue.
 
-**`WF02` variant:** A user-submitted serial (`WF02013F0F3311A87`, white) confirmed as a working Dockstream 2 Smart Fountain reporting the same `PLWF106` MQTT model as the `WF03` units, so it is the same device on a different hardware/serial revision. Auto Setup now recognizes this prefix.
+**Dockstream RFID Smart Fountain:** A user-submitted serial (`WF02013F0F3311A87`) was initially assumed to be a plain Dockstream 2 (same serial prefix as an earlier report), but a real MQTT capture later showed it actually reports MQTT model `PLWF305`, a distinct, RFID-capable fountain. It reports which pet's tag was present during a drink (`WEIGHT_CHANGE_EVENT`), logged and attributed to that pet's activity the same way the One RFID feeder attributes eating sessions. Everything else (water level, filter, pump, light) works the same as the Dockstream 2. Serial prefix `WF02` now maps to this device type instead of the plain Dockstream 2, correcting the earlier assumption. Only a white variant is confirmed so far. If your `WF02` fountain doesn't have RFID tag support, or you have a black one, please open an issue so we can sort that out.
 
 **Cordless fountain:** Feature-identical to the wired Dockstream 2 with the addition of battery level, charge state (Charging / Charged / Discharging), and battery percentage. MQTT model `PLWF116` is taken from the cloud HA integration. The serial prefix `WF04` and color encoding (`BD`/`BA`) are inferred by analogy with the wired model, not confirmed from a real device. If you own one, please open an issue with your serial number so we can confirm or correct these.
 
@@ -58,12 +58,13 @@ Additional devices can be added by contributing a device type entry, the MQTT mo
 
 ## Ask Petlibro to Support Local Control
 
-This app exists because Petlibro devices only connect to their cloud broker out of the box. Two small firmware changes would make local control dramatically simpler: no DNS tricks, no credential capture, no internet-blocking workaround needed:
+This app exists because Petlibro devices only connect to their cloud broker out of the box. One small firmware change would make local control dramatically simpler: no DNS tricks, no credential capture, no internet-blocking workaround needed:
 
 1. **Configurable MQTT broker**: a single settings field to override the broker host and port. One change, massive impact.
-2. **Configurable audio base URL**: let a local broker specify where the feeder fetches sounds. Without this, feeding sounds require internet access even when everything else runs locally.
 
-If you find this app useful, please send a short email to **help@petlibro.com** asking for configurable MQTT broker addresses and a configurable audio URL. A polite, specific request from a real customer carries more weight than a feature thread. A ready-to-send [email template is here](docs/petlibro-feature-request.md).
+(A local audio URL for feeding sounds turned out not to need Petlibro's help at all, it's already writable over MQTT and this app supports it, see Custom feed sounds above.)
+
+If you find this app useful, please send a short email to **help@petlibro.com** asking for configurable MQTT broker addresses. A polite, specific request from a real customer carries more weight than a feature thread. A ready-to-send [email template is here](docs/petlibro-feature-request.md).
 
 ---
 
@@ -118,6 +119,9 @@ The first time you set up a device, Petlibro Local briefly stops Mosquitto and r
 - Last Fed time: records whenever a qualifying feeding session is detected. The feeder door opens and closes after at least the configured minimum eating duration (default 30 seconds, adjustable per device)
 - Maintenance reminders: desiccant replacement, bowl cleaning (every 7 days), and housing cleaning (every 30 days), with per-device notification toggles and a dedicated Maintenance tab
 - Signal strength (RSSI) and firmware version shown in the device modal header
+- One RFID Smart Feeder backup battery: current charge and AC/battery status shown on the device card, modal header, and Overview tab. Exposed to Home Assistant as a Battery sensor and an "On AC Power" binary sensor. Notifications for "running on battery" (fires when caught before the feeder drops Wi-Fi to save power, since this model appears to disconnect shortly after losing AC) and a configurable low-battery percentage threshold in the Maintenance tab
+
+> **Tip:** If you're setting up battery devices around your home in general, not just this feeder, check out my other project, [Battery Sentinel](https://github.com/smcneece/battery-sentinel), a Home Assistant app for monitoring battery devices with an alert system, battery type lookup, and a lot more. Genuinely one of my favorite things I've built.
 
 ### Feeder Controls
 - Feed Now button: dispenses one portion immediately
@@ -126,11 +130,15 @@ The first time you set up a device, Petlibro Local briefly stops Mosquitto and r
 - Feeding schedule viewer with all scheduled meals, quantities, and enabled/disabled state
 - Display matrix: push scrolling text or a built-in icon (heart, dog, cat, elk) directly to the feeder LED display
 - **Custom Icon Editor**: draw pixel art on a 5 × 12 grid, preview it at full 26-pixel display width, save up to 12 named icons, and send them to the feeder with one tap. Includes a "Petlibro Salute" built-in preset
+- **Custom feed sounds**: upload an audio file (any common format, MP3/WAV/M4A/etc., converted automatically) or record one from your microphone, in the Settings → Audio tab. All feeders share one sound library there. From a feeder's Maintenance tab, pick a sound and push it to play on that feeder's scheduled feeds instead of the default chime. Requires a one-time "Local Audio Base URL" setting (a plain LAN address for this app, since the feeder fetches the file directly and can't use your logged-in browser session). Only plays on actual scheduled feeds; PetLibro's own protocol doesn't support sound on a manual Feed Now
 - All controls send directly to the device over local MQTT using the standard Petlibro service protocol
 
 > **Note:** Existing feeding schedules created in the Petlibro app will likely continue to run on the feeder, but it is recommended to recreate them in Petlibro Local to ensure they are managed and visible here. Schedules created in the cloud app may not survive a feeder reboot once the device is running locally.
 
-> **Note:** Feeder sounds are not currently supported for scheduled meals. The built-in "come to eat" chime and custom recorded sounds both require the feeder to reach a PetLibro-provided URL at meal time. When the device is internet-blocked (recommended), those fetches fail silently and no sound plays. Volume control for manual interactions works locally. Sound support will likely require Petlibro working with us and allowing local sound files.
+> **Note on recording custom sounds:** browsers only allow microphone access ("secure context") over HTTPS or `localhost`. Most people reach Home Assistant locally over plain HTTP, so the in-app Record button often won't work there, no error, it just won't be available. Three options, easiest first:
+> 1. **Use the Home Assistant Companion App** on your phone. Recording works there even for local (non-HTTPS) connections.
+> 2. **Record with your phone or computer's own voice recorder app** (Windows' built-in Sound Recorder, or Voice Memos on Mac, both save as `.m4a`), then use Upload File instead of Record. Any common format works and is converted automatically.
+> 3. **Last resort:** some browsers let you manually allow microphone access on an insecure origin via an advanced/experimental flag (for example, Chrome's `chrome://flags/#unsafely-treat-insecure-origin-as-secure`, where you add your Home Assistant address). This varies by browser and isn't something this app can configure for you.
 
 ### Device Setup
 Two setup paths are available when adding a device.
@@ -329,6 +337,8 @@ Petlibro Local automatically publishes MQTT discovery messages so Home Assistant
 | Firmware Version | Sensor (diagnostic) | Current firmware version string |
 | Signal Strength | Sensor (diagnostic) | WiFi RSSI in dBm |
 
+Applies to the Dockstream RFID Smart Fountain as well. That model additionally reports which pet's RFID tag was present during a drink, logged and attributed to that pet in its Recent Activity the same way the One RFID Smart Feeder attributes eating sessions.
+
 ### Automations and Voice Assistants
 
 Because the entities appear in HA like any other integration, they work everywhere HA does:
@@ -399,6 +409,7 @@ Pull requests are welcome. A few things to keep in mind before opening one.
 
 - **Issues and bug reports**: [GitHub Issues](https://github.com/smcneece/petlibro-local/issues)
 - **Feature requests and questions**: [GitHub Issues](https://github.com/smcneece/petlibro-local/issues)
+- **Sharing a debug capture**: Help/About has a "Download Debug Capture" button that grabs the raw MQTT traffic your devices are sending. WiFi network name and any local audio server URL are automatically redacted before download, but it still includes your device serial numbers, so please email it to github@mega-city.com rather than posting it publicly. Still open a GitHub issue to describe the problem itself, just send the capture file by email.
 - **Community**: [Home Assistant Community Forum](https://community.home-assistant.io/)
 
 ---

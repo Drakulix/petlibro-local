@@ -10,6 +10,7 @@ import collections
 import json
 import logging
 import os
+import re
 
 import aiomqtt
 import device_types as _device_types
@@ -23,9 +24,11 @@ _online:       dict[str, bool]  = {}
 _alert_sent:   dict[str, set]   = {}
 _offline_since: dict[str, float] = {}   # epoch when each device first went offline
 _last_seen:    dict[str, float]  = {}   # epoch of most recent MQTT message from device
+_last_attr_poll: dict[str, float] = {}  # epoch of last proactive ATTR_GET_SERVICE query
 
 OFFLINE_ALERT_DELAY_SECS = 90
 WATCHDOG_SECS = 300  # mark offline after 5 min of silence
+ATTR_POLL_INTERVAL_SECS = 300  # re-query full attribute state periodically, not just at connect
 
 # Rolling capture of raw dl/ traffic for diagnostics (Help/About "Download
 # Debug Capture"). Devices only chirp occasionally, so this is passive and
@@ -78,6 +81,13 @@ def register_device(serial: str, model: str, device_type: str):
         import storage as _storage
         cached = _storage.get_device_mqtt_cache(serial)
         if cached:
+            # Disk cache may hold a stale powerType/powerMode from before
+            # this app understood the mapping correctly (2 = battery,
+            # 3 = AC -- see the incoming message handler). Start these two
+            # fresh each run rather than trusting old persisted data; a
+            # genuine push (or the DEVICE_LOG_REPORT_EVENT io:35 handler)
+            # will set the real current value soon enough.
+            cached = {k: v for k, v in cached.items() if k not in ("powerType", "powerMode")}
             _state.setdefault(serial, {}).update(cached)
     except Exception:
         pass
@@ -301,6 +311,7 @@ async def send_feeding_plans(serial: str, plans: list) -> bool:
         _LOGGER.warning("send_feeding_plans: no MQTT client")
         return False
     clean = [{k: v for k, v in p.items() if k != "_enabled"} for p in plans if p.get("_enabled", True)]
+    clean.sort(key=lambda p: p.get("executionTime", "00:00"))
     payload = json.dumps({
         "cmd":    "FEEDING_PLAN_SERVICE",
         "ts":     int(time.time() * 1000),
@@ -309,7 +320,7 @@ async def send_feeding_plans(serial: str, plans: list) -> bool:
     })
     try:
         await _client_ref.publish(topic, payload)
-        _LOGGER.info("FEEDING_PLAN_SERVICE sent to %s... (%d plans)", serial[:6], len(clean))
+        _LOGGER.info("FEEDING_PLAN_SERVICE sent to %s... topic=%s payload=%s", serial[:6], topic, payload)
         return True
     except Exception:
         _LOGGER.exception("Failed to send feeding plans to %s...", serial[:6])
@@ -320,6 +331,18 @@ async def send_feeding_plans(serial: str, plans: list) -> bool:
 
 _PROTO_FIELDS     = frozenset({"cmd", "msgId", "code", "ts"})
 _SENSITIVE_FIELDS = frozenset({"wifiSsid", "wifiPassword", "audioUrl"})
+
+# "Due"/level-style alerts stay true for days until the user acts on them, so
+# a fresh "new" edge can reappear after any add-on restart (_alert_sent is
+# in-memory only) and re-fire the same notification. Cap these to once per
+# 24h regardless of how many times the edge re-triggers. Pure event
+# transitions (offline/back-online, power_battery) are rare and already only
+# fire on a genuine state change, so they're left unthrottled.
+_THROTTLED_ALERTS = frozenset({
+    "food_low", "desiccant_due", "bowl_due", "housing_due", "battery_low",
+    "water_low", "filter_due", "cleaning_due",
+})
+_ALERT_THROTTLE_SECS = 86400
 
 
 def _compute_device_alerts(serial: str) -> set:
@@ -346,6 +369,7 @@ def _compute_device_alerts(serial: str) -> set:
 async def _check_and_fire_alerts(serial: str):
     if _suppress_alerts:
         return
+    import time
     import storage as _storage
     import notifications as _notifications
     try:
@@ -358,6 +382,12 @@ async def _check_and_fire_alerts(serial: str):
         device_cfg = _storage.get_devices().get(serial, {})
         name       = device_cfg.get("name") or serial[:6]
         for alert in new_alerts:
+            if alert in _THROTTLED_ALERTS:
+                last_fired = _storage.get_alert_last_fired(serial).get(alert, 0)
+                if time.time() - last_fired < _ALERT_THROTTLE_SECS:
+                    _LOGGER.info("Alert throttled (fired <24h ago): %s for %s...", alert, serial[:6])
+                    continue
+                _storage.save_alert_last_fired(serial, alert, time.time())
             msg      = _ALERT_MESSAGES.get(alert, alert)
             title    = f"Petlibro Local: {name} — {msg}"
             notif_id = f"petlibro_local_{serial[:8]}_{alert}"
@@ -372,6 +402,16 @@ async def _check_and_fire_alerts(serial: str):
             title = f"Petlibro Local: {name} — {msg}"
             await _notifications.fire_notification(title, msg, settings, device_cfg)
             _LOGGER.info("Back-online notification fired for %s...", serial[:6])
+        if "power_battery" in cleared:
+            # This feeder drops WiFi shortly after losing AC, so we rarely see
+            # a live "still on battery" signal -- but on reconnect it reports
+            # its current power state fresh, so this fires once AC is back.
+            power_id = f"petlibro_local_{serial[:8]}_power_battery"
+            await _notifications.dismiss_notification(power_id, settings, device_cfg)
+            msg   = "AC power restored."
+            title = f"Petlibro Local: {name} — {msg}"
+            await _notifications.fire_notification(title, msg, settings, device_cfg)
+            _LOGGER.info("Power-restored notification fired for %s...", serial[:6])
     except Exception:
         _LOGGER.exception("Alert check failed for %s...", serial[:6])
 
@@ -533,9 +573,12 @@ def _handle_message(serial: str, topic_str: str, raw: str):
         return
 
     if cmd == "FEEDING_PLAN_SERVICE":
+        # Feeder's ack for a plan push -- echoes back what it now has stored,
+        # so this is the real evidence of whether the plan was accepted, and
+        # whether the times/days it stored actually match what we sent.
         code = data.get("code")
         plans = data.get("plans", [])
-        _LOGGER.debug("FEEDING_PLAN_SERVICE from %s... code=%s plans=%d", serial[:6], code, len(plans))
+        _LOGGER.info("FEEDING_PLAN_SERVICE ack from %s...: code=%s plans=%s", serial[:6], code, json.dumps(plans))
         _mark_online(serial)
         asyncio.ensure_future(_check_and_fire_alerts(serial))
         return
@@ -645,6 +688,16 @@ def _handle_message(serial: str, topic_str: str, raw: str):
         asyncio.ensure_future(_check_and_fire_alerts(serial))
         return
 
+    if cmd == "WEIGHT_CHANGE_EVENT":
+        # RFID-capable fountain (Dockstream RFID Smart Fountain / PLWF305):
+        # reports which pet's tag(s) were near the bowl during a detected
+        # drink, with the exact drop amount and duration already computed
+        # device-side -- no NEAR/LEAVE state tracking needed like the feeder.
+        asyncio.ensure_future(_handle_fountain_drink(serial, data))
+        _mark_online(serial)
+        asyncio.ensure_future(_check_and_fire_alerts(serial))
+        return
+
     if cmd == "WAREHOUSE_DOOR_EVENT":
         # Feeder door state change (open/close). Track duration to detect feeding sessions.
         import time as _time
@@ -701,6 +754,17 @@ def _handle_message(serial: str, topic_str: str, raw: str):
         asyncio.ensure_future(_publish_ha_state(serial))
         return
 
+    if cmd == "DEVICE_LOG_REPORT_EVENT":
+        # Includes an "io:35 state:0/1" sensor log on the One RFID feeder --
+        # a GPIO the board uses to directly sense AC presence (0 = lost,
+        # 1 = present), buffered locally with real timestamps and reported
+        # once the feeder reconnects. This is more reliable than the live
+        # ATTR_PUSH_EVENT the feeder sends right as it loses power, which
+        # doesn't always make it out before Wi-Fi drops.
+        asyncio.ensure_future(_handle_power_log(serial, data.get("logs") or []))
+        _mark_online(serial)
+        return
+
     if cmd == "DEVICE_START_EVENT":
         # Feeder just booted — ack it.
         asyncio.ensure_future(_ack_device_start(serial, topic_str, data))
@@ -719,6 +783,16 @@ def _handle_message(serial: str, topic_str: str, raw: str):
 
     if cmd in ("ATTR_GET_SERVICE", "ATTR_SET_SERVICE", "ATTR_PUSH_EVENT"):
         skip    = _PROTO_FIELDS | _SENSITIVE_FIELDS
+        if cmd == "ATTR_GET_SERVICE":
+            # Every ATTR_GET_SERVICE response captured so far has shown
+            # powerType=3 (AC) and powerMode=1, always while genuinely on
+            # AC -- so 3 may well be a real, live reading here, not a fake
+            # placeholder. But it's never been captured mid-battery-outage
+            # to confirm it updates correctly in that case, so play it safe
+            # and only trust these two fields from a genuine, device-
+            # initiated ATTR_PUSH_EVENT (or the DEVICE_LOG_REPORT_EVENT
+            # io:35 handler, which is the reliable source either way).
+            skip = skip | {"powerType", "powerMode"}
         partial = {k: v for k, v in data.items() if k not in skip}
         if partial:
             _, device_type = _devices.get(serial, (None, None))
@@ -766,6 +840,7 @@ async def _respond_feeding_plan(serial: str, request_topic: str) -> None:
     stored_plans = _storage.get_device_feeding_plans(serial)
     clean_plans = [{k: v for k, v in p.items() if k != "_enabled"}
                    for p in stored_plans if p.get("_enabled", True)]
+    clean_plans.sort(key=lambda p: p.get("executionTime", "00:00"))
     payload = json.dumps({
         "cmd":   "GET_FEEDING_PLAN_EVENT",
         "code":  0,
@@ -805,6 +880,151 @@ async def _ack_grain_output(serial: str, event_topic: str, data: dict) -> None:
             _storage.log_feeder_event(serial, "food_dispensed", portions=portions)
         except Exception:
             pass
+
+
+_IO35_RE = re.compile(r"^io:35 state:([01])$")
+
+
+def _format_local_time(ts_ms: int) -> str:
+    import datetime as _dt
+    import storage as _storage
+    tz_name = _storage.get_settings().get("feeder_timezone", "")
+    dt = _dt.datetime.fromtimestamp(ts_ms / 1000, tz=_dt.timezone.utc)
+    if tz_name:
+        try:
+            from zoneinfo import ZoneInfo as _ZI
+            dt = dt.astimezone(_ZI(tz_name))
+        except Exception:
+            dt = dt.astimezone()
+    else:
+        dt = dt.astimezone()
+    return dt.strftime("%I:%M:%S %p").lstrip("0")
+
+
+async def _handle_fountain_drink(serial: str, data: dict) -> None:
+    """Attribute a Dockstream RFID Smart Fountain drink to a pet, mirroring
+    the feeder's RFID eating-session pattern (devices.py's PET_IDENTIFY_EVENT
+    handling), but simpler -- the fountain reports the finished drink
+    (amount + duration + tag(s)) in one event instead of separate NEAR/LEAVE
+    messages."""
+    try:
+        import storage as _storage
+        min_grams = _storage.get_devices().get(serial, {}).get("min_drink_grams", 5)
+        grams = data.get("fluctuatingWeight")
+        if grams is None or not (min_grams <= grams <= 800):
+            return
+
+        rfids = data.get("rfids") or []
+        tag = None
+        if rfids:
+            # Multiple tags can appear if pets drank close together; use
+            # whichever was scanned most during the session as the more
+            # likely drinker.
+            best = max(rfids, key=lambda r: r.get("count", 0))
+            if best.get("rfid"):
+                tag = str(best["rfid"])
+
+        cfg = _storage.get_devices().get(serial, {})
+        pet_ids = cfg.get("pet_ids", [])
+        pets = _storage.get_pets()
+        pet_id = None
+        if tag:
+            _state.setdefault(serial, {})["last_rfid_tag"] = tag
+            pet_id = next((p["id"] for p in pets.values() if str(p.get("rfid_tag", "")) == tag), None)
+            if pet_id is None and len(pet_ids) == 1:
+                pet_id = pet_ids[0]
+            if pet_id and pets.get(pet_id, {}).get("rfid_tag") != tag:
+                _storage.save_pet(pet_id, {"rfid_tag": tag})
+                _LOGGER.info("Auto-saved RFID tag %s to pet %s", tag, pet_id)
+
+        extra = {"duration_secs": data.get("fluctuatingSeconds")}
+        if tag:
+            extra["rfid_tag"] = tag
+        if pet_id:
+            extra["pet_id"] = pet_id
+        _storage.record_intake(serial, grams)
+        _storage.log_fountain_event(serial, "drink", grams=grams, extra=extra)
+
+        if pet_id and tag:
+            try:
+                import notifications as _notif
+                pet_name = pets.get(pet_id, {}).get("name") or "Your pet"
+                dev_name = cfg.get("name") or serial[:8]
+                msg = f"{pet_name} drank {round(grams)}mL at {dev_name}"
+                title = f"Petlibro Local: {msg}"
+                pet_cfg = pets.get(pet_id, {})
+                notify_cfg = {
+                    "notify_bell":   pet_cfg.get("notify_bell", True),
+                    "notify_email":  pet_cfg.get("notify_email", True),
+                    "notify_mobile": pet_cfg.get("notify_mobile", False),
+                }
+                import time as _time
+                notif_id = f"petlibro_local_{(pet_id or serial)[:8]}_drink_{int(_time.time())}"
+                await _notif.fire_notification(title, msg, _storage.get_settings(), notify_cfg,
+                                               notification_id=notif_id)
+            except Exception:
+                _LOGGER.exception("Pet drink notification error")
+    except Exception:
+        _LOGGER.exception("WEIGHT_CHANGE_EVENT handling error for %s...", serial[:6])
+
+
+async def _handle_power_log(serial: str, logs: list) -> None:
+    """Parse io:35 (AC-presence GPIO) entries and fire an accurate
+    "lost at X, restored at Y" notification using the feeder's own buffered
+    timestamps, since the live power_battery push isn't always sent before
+    Wi-Fi drops."""
+    entries = []
+    for log in logs:
+        if log.get("type") != "sensor":
+            continue
+        m = _IO35_RE.match(str(log.get("content", "")))
+        if m and log.get("time"):
+            entries.append((int(log["time"]), int(m.group(1))))
+    if not entries:
+        return
+    entries.sort(key=lambda e: e[0])
+
+    try:
+        import storage as _storage
+        import notifications as _notifications
+
+        last_ts = _storage.get_power_log_last_ts(serial)
+        new_entries = [e for e in entries if e[0] > last_ts]
+        if not new_entries:
+            return
+        _storage.save_power_log_last_ts(serial, entries[-1][0])
+
+        cfg = _storage.get_devices().get(serial, {})
+        if not cfg.get("notifications", {}).get("power_battery", True):
+            return
+        settings = _storage.get_settings()
+        name = cfg.get("name") or serial[:6]
+
+        pending_lost_ts = _state.get(serial, {}).get("_power_lost_ts")
+        for ts_ms, pin_state in new_entries:
+            if pin_state == 0:
+                pending_lost_ts = ts_ms
+                _state.setdefault(serial, {})["_power_lost_ts"] = ts_ms
+            elif pin_state == 1 and pending_lost_ts is not None:
+                duration_secs = max(0, int((ts_ms - pending_lost_ts) / 1000))
+                mins, secs = divmod(duration_secs, 60)
+                dur_str = f"{mins}m{secs}s" if mins else f"{secs}s"
+                msg = (f"Power lost at {_format_local_time(pending_lost_ts)}, "
+                       f"restored at {_format_local_time(ts_ms)} ({dur_str}).")
+                title = f"Petlibro Local: {name} — {msg}"
+                # Separate notification ID from the live powerType-based
+                # power_battery alert (which may or may not have also fired
+                # instantly) -- this one is the reliable, always-accurate
+                # summary, not a replacement for it.
+                notif_id = f"petlibro_local_{serial[:8]}_power_summary"
+                await _notifications.fire_notification(title, msg, settings, cfg,
+                                                       notification_id=notif_id)
+                _LOGGER.info("Power lost/restored (io:35) notification fired for %s...: %s",
+                             serial[:6], msg)
+                pending_lost_ts = None
+                _state.setdefault(serial, {}).pop("_power_lost_ts", None)
+    except Exception:
+        _LOGGER.exception("Failed to process power log for %s...", serial[:6])
 
 
 async def _ack_device_start(serial: str, event_topic: str, data: dict) -> None:
@@ -879,6 +1099,30 @@ async def _offline_watchdog():
                 _offline_since.setdefault(serial, last)
                 _mark_offline(serial)
                 asyncio.ensure_future(_check_and_fire_alerts(serial))
+
+        # Periodically re-query full attribute state instead of only at
+        # connect time. Some fields (e.g. the feeder's powerType) are only
+        # pushed by the device on its own boot/transition, not on every
+        # regular heartbeat -- without this, a value cached from an old
+        # test or transient reboot state (e.g. stuck showing "on battery")
+        # would never refresh again as long as the device stays up.
+        if _client_ref is not None:
+            for serial, (_, device_type) in list(_devices.items()):
+                if not _online.get(serial):
+                    continue
+                if now - _last_attr_poll.get(serial, 0) < ATTR_POLL_INTERVAL_SECS:
+                    continue
+                _last_attr_poll[serial] = now
+                try:
+                    svc_topic = _service_sub_topic(device_type, serial)
+                    payload = json.dumps({
+                        "cmd":   "ATTR_GET_SERVICE",
+                        "ts":    int(now * 1000),
+                        "msgId": f"{serial}_poll{int(now)}",
+                    })
+                    await _client_ref.publish(svc_topic, payload)
+                except Exception:
+                    _LOGGER.exception("Periodic ATTR_GET_SERVICE failed for %s...", serial[:6])
 
         # Per-pet hasn't-eaten check
         try:
@@ -977,6 +1221,7 @@ async def _mqtt_loop():
                         "msgId": f"{serial}_init",
                     })
                     await client.publish(svc_topic, init_payload)
+                    _last_attr_poll[serial] = _time.time()
                     # HA MQTT Discovery
                     cfg   = _storage.get_devices().get(serial, {})
                     state = _state.get(serial, {})
@@ -1069,6 +1314,26 @@ def get_raw_capture() -> list[dict]:
     occasionally and a fixed listen window could easily miss one. Used by the
     Help/About "Download Debug Capture" button."""
     return list(_raw_capture)
+
+
+def redact_payload(payload_str: str) -> str:
+    """Redact known-sensitive fields (WiFi SSID/password, local audio server
+    URL) from a raw MQTT payload string so a debug capture is safe to attach
+    to a public GitHub issue. Serial numbers and MQTT credentials never
+    appear in these payloads in the first place, so nothing else needs it.
+    Falls back to the original string if it isn't valid JSON."""
+    try:
+        data = json.loads(payload_str)
+    except Exception:
+        return payload_str
+    if not isinstance(data, dict):
+        return payload_str
+    changed = False
+    for key in _SENSITIVE_FIELDS:
+        if key in data:
+            data[key] = "[redacted]"
+            changed = True
+    return json.dumps(data) if changed else payload_str
 
 
 _watchdog_task: asyncio.Task | None = None

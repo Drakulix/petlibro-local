@@ -68,6 +68,7 @@
       <button class="stab active" data-stab="general" data-i18n="settings.general_tab">General</button>
       <button class="stab" data-stab="notifications" data-i18n="settings.notif_tab">Notifications</button>
       <button class="stab" data-stab="mqtt" data-i18n="settings.mqtt_tab">MQTT</button>
+      <button class="stab" data-stab="audio" data-i18n="settings.audio_tab">Audio</button>
     </div>
 
     <!-- General tab -->
@@ -206,8 +207,11 @@
         <span class="save-indicator" id="save-indicator-mqtt" data-i18n="settings.saved">✓ Saved</span>
       </button>
       <div class="mqtt-status" id="mqtt-status"></div>
+    </div>
 
-      <div class="settings-section" style="margin-top:24px">
+    <!-- Audio tab -->
+    <div class="stab-panel" id="stab-audio">
+      <div class="settings-section">
         <h2 data-i18n="settings.audio_section">Custom Feed Sounds</h2>
         <div class="form-row">
           <label class="form-label" data-i18n="settings.local_audio_base_url">Local Audio Base URL</label>
@@ -219,6 +223,22 @@
         <span data-i18n="settings.save">Save</span>
         <span class="save-indicator" id="save-indicator-audio" data-i18n="settings.saved">✓ Saved</span>
       </button>
+
+      <div class="settings-section" style="margin-top:24px">
+        <h2 data-i18n="settings.audio_library">Sound Library</h2>
+        <p class="form-hint" data-i18n="settings.audio_library_hint">Shared across all feeders. Push any of these to a specific feeder from its Maintenance tab.</p>
+        <div id="audio-library-list" style="display:flex;flex-direction:column;gap:8px;margin:12px 0"></div>
+
+        <label class="form-label" data-i18n="maint.new_sound_name">New Sound Name</label>
+        <input class="form-input" id="audio-new-name" type="text" placeholder="breakfast" maxlength="40" style="margin-bottom:8px">
+        <div style="display:flex;gap:8px">
+          <button class="btn-secondary" id="btn-audio-upload-file" style="flex:1" data-i18n="maint.upload_file">Upload File</button>
+          <button class="btn-secondary" id="btn-audio-record" style="flex:1">🎤 Record</button>
+        </div>
+        <p class="form-hint" data-i18n="settings.audio_upload_hint">Any common audio format works (MP3, WAV, M4A, etc.), it's converted automatically. Recording needs HTTPS or localhost access to your browser's microphone, which most home setups reached over plain HTTP don't have, Upload File works everywhere and is the reliable option.</p>
+        <input type="file" id="audio-file-input" accept="audio/*,.aac" style="display:none">
+        <p class="form-hint" id="audio-status"></p>
+      </div>
     </div>
   </div>
 </main>
@@ -259,6 +279,7 @@
           <span class="status-badge" id="detail-status-badge"></span>
           <span class="rssi-badge rssi-na" id="detail-rssi" data-i18n="signal.none">No signal</span>
           <span class="fw-badge" id="detail-fw" style="display:none"></span>
+          <span class="fw-badge" id="detail-power" style="display:none"></span>
         </div>
       </div>
     </div>
@@ -417,6 +438,7 @@
           <select class="form-select" id="a-device-type">
             <option value="dockstream2" data-model="WF03">Dockstream 2 Smart Fountain</option>
             <option value="dockstream2_cordless" data-model="WF04">Dockstream 2 Cordless Fountain</option>
+            <option value="dockstream_rfid" data-model="WF02">Dockstream RFID Smart Fountain</option>
             <option value="one_rfid" data-model="AF06">One RFID Smart Feeder</option>
           </select>
         </div>
@@ -456,6 +478,7 @@
             <option value="" data-i18n="add_device.select_type">Select device type...</option>
             <option value="dockstream2" data-model="WF03">Dockstream 2 Smart Fountain</option>
             <option value="dockstream2_cordless" data-model="WF04">Dockstream 2 Cordless Fountain</option>
+            <option value="dockstream_rfid" data-model="WF02">Dockstream RFID Smart Fountain</option>
             <option value="one_rfid" data-model="AF06">One RFID Smart Feeder</option>
           </select>
         </div>
@@ -616,8 +639,29 @@
     <hr style="border:none;border-top:1px solid var(--pl-border);margin:20px 0">
     <div>
       <button class="btn-secondary" id="btn-debug-capture" style="width:100%" data-i18n="about.debug_capture">Download Debug Capture</button>
-      <p style="font-size:12px;color:var(--pl-subtext);margin-top:8px" data-i18n="about.debug_capture_hint">Downloads a rolling log of recent raw device MQTT traffic, including any device this app doesn't recognize (marked UNRECOGNIZED). Collected continuously in the background, so it also catches devices that only check in occasionally. Attach this file when reporting an unsupported or misbehaving device.</p>
+      <p style="font-size:12px;color:var(--pl-subtext);margin-top:8px" data-i18n="about.debug_capture_hint">Downloads a rolling log of recent raw device MQTT traffic, including any device this app doesn't recognize (marked UNRECOGNIZED). Collected continuously in the background, so it also catches devices that only check in occasionally. WiFi name and any local audio server URL are redacted, but this file still includes your device serial numbers, so please email it to github@mega-city.com rather than posting it publicly when reporting an unsupported or misbehaving device.</p>
     </div>
+  </div>
+</div>
+
+<div class="modal-backdrop" id="modal-record-audio">
+  <div class="modal">
+    <button class="modal-close" id="btn-close-record-audio">✕</button>
+    <div class="modal-title" data-i18n="settings.record_title">Record Sound</div>
+    <p class="form-hint" id="record-audio-status" style="margin-bottom:12px"></p>
+
+    <button class="btn-primary" id="btn-record-toggle" style="width:100%" data-i18n="maint.record">🎤 Record</button>
+
+    <div id="record-audio-preview-wrap" style="margin-top:16px;display:none">
+      <label class="form-label" data-i18n="settings.record_preview">Preview</label>
+      <audio id="record-audio-preview" controls style="width:100%"></audio>
+    </div>
+
+    <div style="margin-top:16px">
+      <label class="form-label" data-i18n="maint.new_sound_name">New Sound Name</label>
+      <input class="form-input" id="record-audio-name" type="text" placeholder="breakfast" maxlength="40">
+    </div>
+    <button class="btn-primary" id="btn-record-save" style="width:100%;margin-top:12px" disabled data-i18n="settings.save">Save</button>
   </div>
 </div>
 

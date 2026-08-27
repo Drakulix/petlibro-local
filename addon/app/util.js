@@ -50,6 +50,7 @@ let _deviceSort = localStorage.getItem("pl_device_sort") || "name";
 const DEVICE_ICONS = {
   dockstream2: "💧",
   dockstream2_cordless: "💧",
+  dockstream_rfid: "💧",
   one_rfid: "🐾",
 };
 

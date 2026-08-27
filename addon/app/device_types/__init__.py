@@ -8,10 +8,11 @@ To add a new device family:
 """
 
 from .fountains import dockstream2
+from .fountains import dockstream_rfid
 from .feeders import one_rfid
 # from .litterboxes import luma  # (future)
 
-_MODULES = [dockstream2, one_rfid]
+_MODULES = [dockstream2, dockstream_rfid, one_rfid]
 
 _REGISTRY: dict = {}
 for _mod in _MODULES:

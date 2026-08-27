@@ -50,6 +50,7 @@ ALLOWED_DEVICE_FIELDS = {
     "min_eating_secs",
     "last_fed_ts",
     "last_eating_secs",
+    "battery_low_pct",
 }
 
 ALLOWED_PET_FIELDS = {
@@ -81,6 +82,7 @@ _DEVICE_DEFAULTS = {
     "housing_cleaning_interval_days": 30,
     "display_text": "",
     "display_icon": 0,
+    "battery_low_pct": 20,
     "notifications": {
         "water_low": True,
         "filter_due": True,
@@ -89,6 +91,8 @@ _DEVICE_DEFAULTS = {
         "desiccant_due": True,
         "bowl_due": True,
         "housing_due": True,
+        "power_battery": True,
+        "battery_low": True,
         "offline": True,
     },
     "notify_bell": True,
@@ -216,6 +220,27 @@ def save_device_mqtt_cache(serial: str, state: dict):
 
 def get_device_mqtt_cache(serial: str) -> dict:
     return _load().get("_mqtt_cache", {}).get(serial, {})
+
+
+def get_power_log_last_ts(serial: str) -> float:
+    return _load().get("_power_log_last_ts", {}).get(serial, 0)
+
+
+def save_power_log_last_ts(serial: str, ts: float):
+    data = _load()
+    data.setdefault("_power_log_last_ts", {})[serial] = ts
+    _save(data)
+
+
+def get_alert_last_fired(serial: str) -> dict:
+    return _load().get("_alert_last_fired", {}).get(serial, {})
+
+
+def save_alert_last_fired(serial: str, alert: str, ts: float):
+    data = _load()
+    fired = data.setdefault("_alert_last_fired", {}).setdefault(serial, {})
+    fired[alert] = ts
+    _save(data)
 
 
 def get_device_feeding_plans(serial: str) -> list:
