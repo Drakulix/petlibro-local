@@ -167,15 +167,17 @@ const DEVICE_TYPE_MAP = {
   // (GitHub issue #3) later showed this exact serial actually reports
   // PLWF305 (RFID-capable), correcting the earlier assumption.
   "WF02": { device_type: "dockstream_rfid",      model: "WF02" },
-  "WF03": { device_type: "dockstream2",         model: "WF03" },
+  "WF03": { device_type: "dockstream2",          model: "WF03" },
   "WF04": { device_type: "dockstream2_cordless", model: "WF04" },
   "AF06": { device_type: "one_rfid",             model: "AF06" },
+  "AF05": { device_type: "polar",                model: "AF05" },
 };
 const DEVICE_MQTT_MODELS = {
   "dockstream2":          "plwf106",
   "dockstream2_cordless": "plwf116",
   "dockstream_rfid":      "plwf305",
   "one_rfid":             "plaf301",
+  "polar":                "plaf109",
 };
 const DEVICE_VARIANTS = {
   "dockstream2":          [{ value: "b", label: "Black" }, { value: "w", label: "White" }],
@@ -184,6 +186,7 @@ const DEVICE_VARIANTS = {
   // a black option back here if one turns up.
   "dockstream_rfid":      [{ value: "w", label: "White" }],
   "one_rfid":             [{ value: "b", label: "Black" }, { value: "w", label: "White" }],
+  "polar":                [{ value: "b", label: "Black" }, { value: "w", label: "White" }],
 };
 
 function deviceImageUrl(deviceType, variant) {
@@ -199,7 +202,7 @@ function populatePetSection(sectionId, listId, optionalLabelId, deviceType) {
   if (!section || !list) return;
   if (!_pets.length) { section.style.display = "none"; return; }
   section.style.display = "";
-  if (optLabel) optLabel.style.display = deviceType === "one_rfid" ? "none" : "";
+  if (optLabel) optLabel.style.display = deviceType === "one_rfid" || deviceType === "polar" ? "none" : "";
   list.innerHTML = _pets.map(p => `
     <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:14px;color:var(--pl-text)">
       <input type="checkbox" class="add-pet-cb" data-list="${escHtml(listId)}" value="${escHtml(p.id)}"

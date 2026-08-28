@@ -407,7 +407,7 @@ async def handle_api_icons_get(request):
 def _republish_feeder_icons():
     """Re-announce HA Discovery for all feeder devices so the icon select options stay in sync."""
     for serial, cfg in storage.get_devices().items():
-        if cfg.get("device_type") == "one_rfid":
+        if cfg.get("device_type") in ["one_rfid", "polar"]:
             asyncio.ensure_future(devices.republish_ha_discovery(serial))
 
 

@@ -62,7 +62,7 @@ function renderDevices() {
   grid.innerHTML = sorted.map(d => {
     const online = d.online;
     const statusClass = online ? "online" : "offline";
-    const isFeeder = d.device_type === "one_rfid";
+    const isFeeder = d.device_type === "one_rfid" || d.device_type === "polar";
     const water = fmtWater(d.currentWeight ?? null);
     const filterDays = filterDaysRemaining(d);
     const cleanDays = cleaningDaysRemaining(d);

@@ -27,7 +27,7 @@ function openDeviceModal(device) {
   }
 
   const powerEl = document.getElementById("detail-power");
-  if (device.device_type === "one_rfid" && device.electricQuantity != null && device.electricQuantity > 0) {
+  if ((device.device_type === "one_rfid" || device.device_type == "polar") && device.electricQuantity != null && device.electricQuantity > 0) {
     const onAC = device.powerType !== 2;
     powerEl.textContent = onAC ? `🔌 ${t("power.ac")}` : `🔋 ${device.electricQuantity}%`;
     powerEl.style.display = "";
@@ -35,7 +35,7 @@ function openDeviceModal(device) {
     powerEl.style.display = "none";
   }
 
-  const isFeeder = device.device_type === "one_rfid";
+  const isFeeder = device.device_type === "one_rfid" || device.device_type == "polar";
   const isFountain = device.device_type?.startsWith("dockstream");
   document.querySelectorAll(".dtab").forEach(b => {
     b.classList.toggle("active", b.dataset.dtab === "overview");
@@ -59,7 +59,7 @@ function renderDeviceTab(tabName) {
   else if (tabName === "maintenance") content.innerHTML = buildMaintenanceTab(_currentDevice);
   else if (tabName === "log") {
     content.innerHTML = `<p style="color:var(--pl-subtext);padding:16px 0;text-align:center">Loading...</p>`;
-    if (_currentDevice.device_type === "one_rfid") {
+    if (_currentDevice.device_type === "one_rfid" || _current_device.device_type === "polar") {
       api("GET", `/api/devices/${_currentDevice.serial}/feeder-log`)
         .then(log => { content.innerHTML = buildFeederLogTab(_currentDevice, log); })
         .catch(() => { content.innerHTML = `<p style="color:var(--pl-danger);padding:16px 0">${t("device_modal.load_failed_log")}</p>`; });
@@ -223,6 +223,55 @@ function buildOverviewTab(device) {
     </div>` : ""}`;
   }
 
+  if (device.device_type === "polar") {
+      const powerIsAC  = device.powerType !== 2;
+      const hasBattery = device.electricQuantity != null && device.electricQuantity > 0;
+      const lowPct     = device.battery_low_pct ?? 20;
+      const battClass  = hasBattery && device.electricQuantity <= lowPct ? "danger" : "";
+      const openMode   = device.coverOpenMode   ?? "KEEP_CLOSE";
+      const soundOn    = device.soundSwitch !== false;
+      const volume     = device.volume ?? 50;
+      const battPct  = hasBattery
+        ? `${device.electricQuantity}% (${powerIsAC ? t("power.ac") : t("power.battery")})`
+        : (powerIsAC ? t("power.ac") : "—");
+      return `<div class="detail-stats">
+        <div class="detail-stat" style="padding:8px 14px">
+          <div class="detail-stat-label">${t("overview.battery")}</div>
+          <div class="detail-stat-value ${battClass}">${battPct}</div>
+        </div>
+      </div>
+      <div style="margin-top:16px">
+        <div class="tab-section-heading">${t("overview.controls")}</div>
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+          <button class="btn-primary" id="btn-feed-now" style="flex:1">${t("overview.feed_now")}</button>
+        </div>
+        <div style="display:flex;gap:8px;margin-top:8px">
+          <button class="btn-secondary" id="btn-open-lid" style="flex:1">${t("overview.open_lid")}</button>
+          <button class="btn-secondary" id="btn-close-lid" style="flex:1">${t("overview.close_lid")}</button>
+        </div>
+      </div>
+      <div style="margin-top:16px">
+        <div class="form-row">
+          <label class="form-label">${t("overview.lid_mode")}</label>
+          <select class="form-input" id="feeder-cover-open-mode">
+            <option value="KEEP_CLOSE" ${openMode === "KEEP_CLOSE" ? "selected" : ""}>${t("overview.lid_always_closed")}</option>
+            <option value="KEEP_OPEN"  ${openMode === "KEEP_OPEN"  ? "selected" : ""}>${t("overview.lid_stay_open")}</option>
+          </select>
+        </div>
+        <div class="form-row" style="align-items:center;gap:16px;flex-wrap:wrap;margin-top:8px">
+          <label style="display:flex;align-items:center;gap:6px;cursor:pointer">
+            <input type="checkbox" id="feeder-sound-switch" ${soundOn ? "checked" : ""}> ${t("overview.sound")}
+            <input class="form-input" id="feeder-volume" type="number" min="0" max="100" value="${volume}" style="width:72px;margin-left:4px">
+          </label>
+        </div>
+        <button class="btn-secondary" id="btn-save-feeder-settings" style="width:100%;margin-top:10px">${t("overview.save_settings")}</button>
+      </div>
+      ${(!device.pets?.length) ? `
+      <div style="background:rgba(224,168,85,.12);border:1px solid rgba(224,168,85,.5);color:var(--pl-warning);border-radius:var(--pl-radius-sm);padding:10px 12px;font-size:13px;margin-top:14px;line-height:1.5">
+        ${t("overview.no_pets")}
+      </div>` : ""}`;
+    }
+
   return `<div class="detail-stats">
     <div class="detail-stat">
       <div class="detail-stat-label">${t("overview.water_level")}</div>
@@ -344,6 +393,36 @@ function buildMaintenanceTab(device) {
     <button class="btn-secondary" id="btn-push-audio" style="width:100%">${t("maint.push_sound")}</button>
     <p class="form-hint" id="maint-audio-status"></p>`;
   }
+
+  if (device.device_type === "polar") {
+      const bowlDays = bowlDaysRemaining(device);
+      const bCol  = bowlDays != null && bowlDays <= 0 ? "var(--pl-danger)" : "var(--pl-accent)";
+      return `
+      <div class="tab-section-heading">${t("maint.bowl")}</div>
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
+        <span style="font-size:13px;color:var(--pl-subtext);white-space:nowrap">${t("maint.next_clean_in")}</span>
+        <input class="form-input" id="maint-bowl-days" type="number" min="0" max="365"
+          value="${bowlDays != null ? Math.max(0, Math.round(bowlDays)) : ""}"
+          placeholder="${bowlDays != null ? "" : t("maint.bowl_not_set")}"
+          style="max-width:90px;color:${bCol}">
+      </div>
+      <label class="form-label">${t("maint.bowl_clean_every")}</label>
+      <div style="display:flex;gap:8px;margin-bottom:18px">
+        <input class="form-input" id="maint-bowl-interval" type="number" min="1" max="90" value="${device.bowl_cleaning_interval_days ?? 7}" style="flex:1">
+        <button class="btn-secondary" id="btn-record-bowl" style="flex-shrink:0">${t("maint.record_bowl")}</button>
+      </div>
+
+      <div class="tab-section-heading">${t("maint.feed_sounds")}</div>
+      <p class="form-hint">${t("maint.feed_sounds_hint")}</p>
+      <div class="form-row">
+        <label class="form-label">${t("maint.feed_sound_select")}</label>
+        <select class="form-select" id="maint-audio-select">
+          <option value="" data-i18n="maint.feed_sound_loading">${t("maint.feed_sound_loading")}</option>
+        </select>
+      </div>
+      <button class="btn-secondary" id="btn-push-audio" style="width:100%">${t("maint.push_sound")}</button>
+      <p class="form-hint" id="maint-audio-status"></p>`;
+    }
 
   const filterDays = filterDaysRemaining(device);
   const filterLifeDays = device.filter_life_days ?? 30;
@@ -759,20 +838,32 @@ function wireScheduleTabHandlers() {
 // ── Notifications tab ─────────────────────────────────────────────────────
 function buildNotificationsTab(device) {
   const notif = device.notifications || {};
-  const isFeeder = device.device_type === "one_rfid";
-  const checks = isFeeder ? [
-    { key: "food_low",      label: t("notif.food_low") },
-    { key: "desiccant_due", label: t("notif.desiccant_due") },
-    { key: "bowl_due",      label: t("notif.bowl_due") },
-    { key: "housing_due",   label: t("notif.housing_due") },
-    { key: "power_battery", label: t("notif.power_battery") },
-    { key: "offline",       label: t("notif.offline") },
-  ] : [
+  const isFeeder = device.device_type === "one_rfid" || device.device_type === "polar";
+  let checks = [
     { key: "water_low",    label: t("notif.water_low") },
     { key: "filter_due",   label: t("notif.filter_due") },
     { key: "cleaning_due", label: t("notif.cleaning_due") },
     { key: "offline",      label: t("notif.offline") },
   ];
+
+  if (device.device_type === "one_rfid") {
+    checks = [
+      { key: "food_low", label: t("notif.food_low") },
+      { key: "desiccant_due", label: t("notif.desiccant_due") },
+      { key: "bowl_due", label: t("notif.bowl_due") },
+      { key: "housing_due", label: t("notif.housing_due") },
+      { key: "power_battery", label: t("notif.power_battery") },
+      { key: "offline", label: t("notif.offline") },
+    ];
+  }
+  if (device.device_type === "polar") {
+    checks = [
+      { key: "bowl_due", label: t("notif.bowl_due") },
+      { key: "power_battery", label: t("notif.power_battery") },
+      { key: "offline", label: t("notif.offline") },
+    ];
+  }
+
   const devMobileOptions = `<option value="">-- Default from Settings --</option>` +
     _mobileTargets.map(t =>
       `<option value="${escHtml(t.service)}"${device.notify_mobile_service === t.service ? " selected" : ""}>${escHtml(t.label)}</option>`

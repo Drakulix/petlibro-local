@@ -52,10 +52,12 @@ const DEVICE_ICONS = {
   dockstream2_cordless: "💧",
   dockstream_rfid: "💧",
   one_rfid: "🐾",
+  polar: "🐾",
 };
 
 const DEVICE_REQUIRES_PET = {
   one_rfid: true,
+  polar: true,
 };
 
 function deviceIcon(d) {

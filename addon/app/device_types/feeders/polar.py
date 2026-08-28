@@ -1,0 +1,62 @@
+"""Polar Wet Food Feeder."""
+
+DEVICE_TYPES = ["polar"]
+
+MQTT_MODELS = {
+    "polar": "PLAF109",
+}
+
+ALERT_MESSAGES = {
+    #"food_low":      "Food hopper is empty or running low.",
+    #"desiccant_due": "Desiccant needs replacing.",
+    "bowl_due":      "Food bowl needs cleaning.",
+    #"housing_due":   "Feeder housing needs cleaning.",
+    "power_battery": "Running on battery power (AC lost).",
+    "battery_low":   "Backup battery is low.",
+}
+
+DEFAULT_NOTIFICATIONS = {
+    #"food_low":      True,
+    #"desiccant_due": True,
+    "bowl_due":      True,
+    #"housing_due":   True,
+    "power_battery": True,
+    # battery_low has no separate on/off toggle -- battery_low_pct == 0 disables it
+}
+
+
+def compute_alerts(state: dict, cfg: dict, online: bool) -> set:
+    import time as _time
+    notif = cfg.get("notifications", {})
+    alerts = set()
+    if notif.get("bowl_due", True):
+        last_ts   = cfg.get("last_bowl_cleaned_ts")
+        interval  = cfg.get("bowl_cleaning_interval_days", 7)
+        if last_ts is not None:
+            elapsed = (_time.time() - last_ts / 1000) / 86400
+            if elapsed >= interval:
+                alerts.add("bowl_due")
+    if notif.get("power_battery", True):
+        # Opportunistic: this feeder appears to drop WiFi shortly after
+        # losing AC power to save the battery, so this typically only
+        # catches the single transient state update sent right at the
+        # transition, not a sustained live signal. Real outages mostly show
+        # up as the existing "offline" alert instead.
+        # powerType: 2 = battery, 3 = AC, confirmed via a direct AC-cut
+        # test. 1 has never been observed in any capture. (An io:35 sensor
+        # log was tried as a second, more precise timing source but turned
+        # out to also fire for reasons unrelated to AC loss -- removed.)
+        if state.get("powerType") == 2:
+            alerts.add("power_battery")
+    # Threshold of 0 disables this alert entirely; any other value both
+    # enables it and sets the level, so there's no separate on/off toggle.
+    threshold = cfg.get("battery_low_pct", 20)
+    if threshold > 0:
+        pct = state.get("electricQuantity")
+        if pct is not None and pct > 0 and pct <= threshold:
+            alerts.add("battery_low")
+    return alerts
+
+
+def track_intake(old_state: dict, new_state: dict, min_grams: float = 5) -> float | None:
+    return None  # feeders don't track water intake
