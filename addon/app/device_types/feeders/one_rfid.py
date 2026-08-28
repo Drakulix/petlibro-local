@@ -21,7 +21,7 @@ DEFAULT_NOTIFICATIONS = {
     "bowl_due":      True,
     "housing_due":   True,
     "power_battery": True,
-    "battery_low":   True,
+    # battery_low has no separate on/off toggle -- battery_low_pct == 0 disables it
 }
 
 
@@ -58,19 +58,19 @@ def compute_alerts(state: dict, cfg: dict, online: bool) -> set:
         # Opportunistic: this feeder appears to drop WiFi shortly after
         # losing AC power to save the battery, so this typically only
         # catches the single transient state update sent right at the
-        # transition, not a sustained live signal (and even that live push
-        # isn't always sent in time -- the DEVICE_LOG_REPORT_EVENT io:35
-        # handler in devices.py is the reliable fallback for accurate
-        # lost/restored timing). Real outages mostly show up as the existing
-        # "offline" alert instead.
-        # powerType: 2 = battery, 3 = AC (confirmed via direct testing and
-        # matching io:35 AC-presence sensor logs). 1 has never been observed
-        # in any capture.
+        # transition, not a sustained live signal. Real outages mostly show
+        # up as the existing "offline" alert instead.
+        # powerType: 2 = battery, 3 = AC, confirmed via a direct AC-cut
+        # test. 1 has never been observed in any capture. (An io:35 sensor
+        # log was tried as a second, more precise timing source but turned
+        # out to also fire for reasons unrelated to AC loss -- removed.)
         if state.get("powerType") == 2:
             alerts.add("power_battery")
-    if notif.get("battery_low", True):
+    # Threshold of 0 disables this alert entirely; any other value both
+    # enables it and sets the level, so there's no separate on/off toggle.
+    threshold = cfg.get("battery_low_pct", 20)
+    if threshold > 0:
         pct = state.get("electricQuantity")
-        threshold = cfg.get("battery_low_pct", 20)
         if pct is not None and pct > 0 and pct <= threshold:
             alerts.add("battery_low")
     return alerts

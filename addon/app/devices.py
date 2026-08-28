@@ -10,7 +10,6 @@ import collections
 import json
 import logging
 import os
-import re
 
 import aiomqtt
 import device_types as _device_types
@@ -85,8 +84,7 @@ def register_device(serial: str, model: str, device_type: str):
             # this app understood the mapping correctly (2 = battery,
             # 3 = AC -- see the incoming message handler). Start these two
             # fresh each run rather than trusting old persisted data; a
-            # genuine push (or the DEVICE_LOG_REPORT_EVENT io:35 handler)
-            # will set the real current value soon enough.
+            # genuine push will set the real current value soon enough.
             cached = {k: v for k, v in cached.items() if k not in ("powerType", "powerMode")}
             _state.setdefault(serial, {}).update(cached)
     except Exception:
@@ -382,6 +380,12 @@ async def _check_and_fire_alerts(serial: str):
         device_cfg = _storage.get_devices().get(serial, {})
         name       = device_cfg.get("name") or serial[:6]
         for alert in new_alerts:
+            if alert == "power_battery":
+                # Our own record of when AC was lost, driven by powerType
+                # (2 = battery, confirmed via direct testing) rather than the
+                # feeder's io:35 device log, which turned out to also fire
+                # for reasons unrelated to AC loss (see project notes).
+                _state.setdefault(serial, {})["_power_lost_ts"] = time.time() * 1000
             if alert in _THROTTLED_ALERTS:
                 last_fired = _storage.get_alert_last_fired(serial).get(alert, 0)
                 if time.time() - last_fired < _ALERT_THROTTLE_SECS:
@@ -408,10 +412,19 @@ async def _check_and_fire_alerts(serial: str):
             # its current power state fresh, so this fires once AC is back.
             power_id = f"petlibro_local_{serial[:8]}_power_battery"
             await _notifications.dismiss_notification(power_id, settings, device_cfg)
-            msg   = "AC power restored."
+            lost_ts = _state.get(serial, {}).pop("_power_lost_ts", None)
+            if lost_ts:
+                now_ms = time.time() * 1000
+                duration_secs = max(0, int((now_ms - lost_ts) / 1000))
+                mins, secs = divmod(duration_secs, 60)
+                dur_str = f"{mins}m{secs}s" if mins else f"{secs}s"
+                msg = (f"Power lost at {_format_local_time(int(lost_ts))}, "
+                       f"restored at {_format_local_time(int(now_ms))} ({dur_str}).")
+            else:
+                msg = "AC power restored."
             title = f"Petlibro Local: {name} — {msg}"
             await _notifications.fire_notification(title, msg, settings, device_cfg)
-            _LOGGER.info("Power-restored notification fired for %s...", serial[:6])
+            _LOGGER.info("Power-restored notification fired for %s...: %s", serial[:6], msg)
     except Exception:
         _LOGGER.exception("Alert check failed for %s...", serial[:6])
 
@@ -754,17 +767,6 @@ def _handle_message(serial: str, topic_str: str, raw: str):
         asyncio.ensure_future(_publish_ha_state(serial))
         return
 
-    if cmd == "DEVICE_LOG_REPORT_EVENT":
-        # Includes an "io:35 state:0/1" sensor log on the One RFID feeder --
-        # a GPIO the board uses to directly sense AC presence (0 = lost,
-        # 1 = present), buffered locally with real timestamps and reported
-        # once the feeder reconnects. This is more reliable than the live
-        # ATTR_PUSH_EVENT the feeder sends right as it loses power, which
-        # doesn't always make it out before Wi-Fi drops.
-        asyncio.ensure_future(_handle_power_log(serial, data.get("logs") or []))
-        _mark_online(serial)
-        return
-
     if cmd == "DEVICE_START_EVENT":
         # Feeder just booted — ack it.
         asyncio.ensure_future(_ack_device_start(serial, topic_str, data))
@@ -790,8 +792,7 @@ def _handle_message(serial: str, topic_str: str, raw: str):
             # placeholder. But it's never been captured mid-battery-outage
             # to confirm it updates correctly in that case, so play it safe
             # and only trust these two fields from a genuine, device-
-            # initiated ATTR_PUSH_EVENT (or the DEVICE_LOG_REPORT_EVENT
-            # io:35 handler, which is the reliable source either way).
+            # initiated ATTR_PUSH_EVENT.
             skip = skip | {"powerType", "powerMode"}
         partial = {k: v for k, v in data.items() if k not in skip}
         if partial:
@@ -882,9 +883,6 @@ async def _ack_grain_output(serial: str, event_topic: str, data: dict) -> None:
             pass
 
 
-_IO35_RE = re.compile(r"^io:35 state:([01])$")
-
-
 def _format_local_time(ts_ms: int) -> str:
     import datetime as _dt
     import storage as _storage
@@ -966,65 +964,6 @@ async def _handle_fountain_drink(serial: str, data: dict) -> None:
                 _LOGGER.exception("Pet drink notification error")
     except Exception:
         _LOGGER.exception("WEIGHT_CHANGE_EVENT handling error for %s...", serial[:6])
-
-
-async def _handle_power_log(serial: str, logs: list) -> None:
-    """Parse io:35 (AC-presence GPIO) entries and fire an accurate
-    "lost at X, restored at Y" notification using the feeder's own buffered
-    timestamps, since the live power_battery push isn't always sent before
-    Wi-Fi drops."""
-    entries = []
-    for log in logs:
-        if log.get("type") != "sensor":
-            continue
-        m = _IO35_RE.match(str(log.get("content", "")))
-        if m and log.get("time"):
-            entries.append((int(log["time"]), int(m.group(1))))
-    if not entries:
-        return
-    entries.sort(key=lambda e: e[0])
-
-    try:
-        import storage as _storage
-        import notifications as _notifications
-
-        last_ts = _storage.get_power_log_last_ts(serial)
-        new_entries = [e for e in entries if e[0] > last_ts]
-        if not new_entries:
-            return
-        _storage.save_power_log_last_ts(serial, entries[-1][0])
-
-        cfg = _storage.get_devices().get(serial, {})
-        if not cfg.get("notifications", {}).get("power_battery", True):
-            return
-        settings = _storage.get_settings()
-        name = cfg.get("name") or serial[:6]
-
-        pending_lost_ts = _state.get(serial, {}).get("_power_lost_ts")
-        for ts_ms, pin_state in new_entries:
-            if pin_state == 0:
-                pending_lost_ts = ts_ms
-                _state.setdefault(serial, {})["_power_lost_ts"] = ts_ms
-            elif pin_state == 1 and pending_lost_ts is not None:
-                duration_secs = max(0, int((ts_ms - pending_lost_ts) / 1000))
-                mins, secs = divmod(duration_secs, 60)
-                dur_str = f"{mins}m{secs}s" if mins else f"{secs}s"
-                msg = (f"Power lost at {_format_local_time(pending_lost_ts)}, "
-                       f"restored at {_format_local_time(ts_ms)} ({dur_str}).")
-                title = f"Petlibro Local: {name} — {msg}"
-                # Separate notification ID from the live powerType-based
-                # power_battery alert (which may or may not have also fired
-                # instantly) -- this one is the reliable, always-accurate
-                # summary, not a replacement for it.
-                notif_id = f"petlibro_local_{serial[:8]}_power_summary"
-                await _notifications.fire_notification(title, msg, settings, cfg,
-                                                       notification_id=notif_id)
-                _LOGGER.info("Power lost/restored (io:35) notification fired for %s...: %s",
-                             serial[:6], msg)
-                pending_lost_ts = None
-                _state.setdefault(serial, {}).pop("_power_lost_ts", None)
-    except Exception:
-        _LOGGER.exception("Failed to process power log for %s...", serial[:6])
 
 
 async def _ack_device_start(serial: str, event_topic: str, data: dict) -> None:

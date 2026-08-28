@@ -415,9 +415,9 @@ async def publish_state(client, serial: str, cfg: dict, state: dict, plans: list
             await client.publish(state_topic(serial, "battery"), str(state["electricQuantity"]), retain=True)
 
         if "powerType" in state:
-            # powerType: 2 = battery, 3 = AC (confirmed via direct testing
-            # and matching io:35 AC-presence sensor logs). 1 has never been
-            # observed. Treat anything other than a confirmed 2 as AC.
+            # powerType: 2 = battery, 3 = AC, confirmed via a direct AC-cut
+            # test. 1 has never been observed. Treat anything other than a
+            # confirmed 2 as AC.
             val = "OFF" if state["powerType"] == 2 else "ON"
             await client.publish(state_topic(serial, "on_ac_power"), val, retain=True)
 

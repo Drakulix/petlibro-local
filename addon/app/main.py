@@ -19,7 +19,7 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name
 logging.getLogger("aiohttp.access").setLevel(logging.WARNING)
 _LOGGER = logging.getLogger(__name__)
 
-VERSION = "2026.08.6"
+VERSION = "2026.08.7"
 
 # Credential capture state
 _capture_state: dict = {"status": "idle", "result": {}}
@@ -42,6 +42,12 @@ def _devices_with_state() -> list:
     for serial, cfg in stored.items():
         state = all_states.get(serial, {})
         device_pets = [pets[pid] for pid in cfg.get("pet_ids", []) if pid in pets]
+        if cfg.get("device_type") == "dockstream_rfid":
+            pet_intake = storage.get_fountain_pet_intake_today(serial)
+            device_pets = [
+                {**p, **pet_intake.get(p["id"], {"grams": 0, "visits": 0, "duration_secs": 0})}
+                for p in device_pets
+            ]
         intake_today = storage.get_intake_today(serial)
         feeding_plans = storage.get_device_feeding_plans(serial)
         result.append({**cfg, **state, "pets": device_pets, "intake_today_grams": intake_today, "feeding_plans": feeding_plans})

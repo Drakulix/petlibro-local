@@ -92,7 +92,6 @@ _DEVICE_DEFAULTS = {
         "bowl_due": True,
         "housing_due": True,
         "power_battery": True,
-        "battery_low": True,
         "offline": True,
     },
     "notify_bell": True,
@@ -222,16 +221,6 @@ def get_device_mqtt_cache(serial: str) -> dict:
     return _load().get("_mqtt_cache", {}).get(serial, {})
 
 
-def get_power_log_last_ts(serial: str) -> float:
-    return _load().get("_power_log_last_ts", {}).get(serial, 0)
-
-
-def save_power_log_last_ts(serial: str, ts: float):
-    data = _load()
-    data.setdefault("_power_log_last_ts", {})[serial] = ts
-    _save(data)
-
-
 def get_alert_last_fired(serial: str) -> dict:
     return _load().get("_alert_last_fired", {}).get(serial, {})
 
@@ -334,6 +323,28 @@ def get_intake_history(serial: str, days: int = 7) -> list:
     for i in range(days):
         d = (datetime.date.today() - datetime.timedelta(days=i)).isoformat()
         result.append({"date": d, "grams": round(serial_intake.get(d, 0.0), 1)})
+    return result
+
+
+def get_fountain_pet_intake_today(serial: str) -> dict:
+    """Return {pet_id: {"grams": float, "visits": int, "duration_secs": int}}
+    for today's RFID-confirmed drinks on this fountain (Dockstream RFID Smart
+    Fountain). Uses the same local-day boundary as record_intake/get_intake_today."""
+    today = datetime.date.today().isoformat()
+    entries = _load().get("_fountain_log", {}).get(serial, [])
+    result: dict = {}
+    for e in entries:
+        if e.get("type") != "drink" or not e.get("pet_id"):
+            continue
+        entry_date = datetime.datetime.fromtimestamp(e.get("ts", 0) / 1000).date().isoformat()
+        if entry_date != today:
+            continue
+        agg = result.setdefault(e["pet_id"], {"grams": 0.0, "visits": 0, "duration_secs": 0})
+        agg["grams"] += e.get("grams", 0)
+        agg["visits"] += 1
+        agg["duration_secs"] += e.get("duration_secs") or 0
+    for agg in result.values():
+        agg["grams"] = round(agg["grams"], 1)
     return result
 
 

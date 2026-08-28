@@ -607,6 +607,37 @@
   .detail-stat-value.accent { color: var(--pl-accent); }
   .detail-stat-value.danger { color: var(--pl-danger); }
 
+  /* ── Pet activity list (fountain Overview tab) ── */
+  .intake-list {
+    max-height: 250px;
+    overflow-y: auto;
+  }
+  .intake-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 0;
+    border-bottom: 1px solid var(--pl-border);
+  }
+  .intake-row:last-child { border-bottom: none; }
+  .intake-avatar {
+    width: 40px; height: 40px;
+    flex-shrink: 0;
+    border-radius: 50%;
+    background: var(--pl-surface-2);
+    border: 2px solid var(--pl-accent);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 18px;
+    overflow: hidden;
+  }
+  .intake-avatar img { width: 100%; height: 100%; object-fit: cover; }
+  .intake-info { flex: 1; min-width: 0; }
+  .intake-name { font-size: 14px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .intake-stats { font-size: 12px; color: var(--pl-subtext); }
+  .intake-value { font-size: 16px; font-weight: 700; color: var(--pl-accent); flex-shrink: 0; }
+
   /* ── Toggle switches ── */
   .toggle-list { margin-bottom: 14px; }
   .toggle-row {

@@ -36,10 +36,12 @@ function openDeviceModal(device) {
   }
 
   const isFeeder = device.device_type === "one_rfid";
+  const isFountain = device.device_type?.startsWith("dockstream");
   document.querySelectorAll(".dtab").forEach(b => {
     b.classList.toggle("active", b.dataset.dtab === "overview");
     if (b.dataset.dtab === "log") b.style.display = "";
     if (b.dataset.dtab === "schedule") b.style.display = isFeeder ? "" : "none";
+    if (b.dataset.dtab === "controls") b.style.display = isFountain ? "" : "none";
   });
 
   renderDeviceTab("overview");
@@ -53,6 +55,7 @@ function renderDeviceTab(tabName) {
   _currentDeviceTab = tabName;
   const content = document.getElementById("dtab-content");
   if (tabName === "overview") content.innerHTML = buildOverviewTab(_currentDevice);
+  else if (tabName === "controls") content.innerHTML = buildControlsTab(_currentDevice);
   else if (tabName === "maintenance") content.innerHTML = buildMaintenanceTab(_currentDevice);
   else if (tabName === "log") {
     content.innerHTML = `<p style="color:var(--pl-subtext);padding:16px 0;text-align:center">Loading...</p>`;
@@ -105,49 +108,23 @@ function buildOverviewTab(device) {
       </div>`
     : "";
 
-  let controlsHtml = "";
-  if (device.device_type?.startsWith("dockstream")) {
-    const pumpOn = !device.waterStopSwitch;
-    const lightOn = !!device.lightSwitch;
-    const filterLedOn = !!device.filterLedSwitch;
-    const waterType = device.useWaterType ?? 0;
-    const waterInterval = device.useWaterInterval ?? 15;
-    const waterDuration = device.useWaterDuration ?? 15;
-    controlsHtml = `
-  <div class="tab-section-heading" style="margin-top:18px">${t("overview.controls")}</div>
-  <div class="toggle-list">
-    <div class="toggle-row">
-      <span class="toggle-label">${t("overview.pump")}</span>
-      <button class="toggle-switch ${pumpOn ? "sw-on" : "sw-off"}" id="ctrl-pump"></button>
-    </div>
-    <div class="toggle-row">
-      <span class="toggle-label">${t("overview.light")}</span>
-      <button class="toggle-switch ${lightOn ? "sw-on" : "sw-off"}" id="ctrl-light"></button>
-    </div>
-    <div class="toggle-row">
-      <span class="toggle-label">${t("overview.filter_indicator")}</span>
-      <button class="toggle-switch ${filterLedOn ? "sw-on" : "sw-off"}" id="ctrl-filter-led"></button>
-    </div>
-  </div>
-  <div class="form-row">
-    <label class="form-label">${t("overview.flow_mode")}</label>
-    <select class="form-select" id="ctrl-water-type">
-      <option value="0" ${waterType === 0 ? "selected" : ""}>${t("overview.flow_continuous")}</option>
-      <option value="1" ${waterType === 1 ? "selected" : ""}>${t("overview.flow_intermittent")}</option>
-      <option value="2" ${waterType === 2 ? "selected" : ""}>${t("overview.flow_smart")}</option>
-    </select>
-  </div>
-  <div id="intermittent-settings" style="${waterType === 1 ? "" : "display:none"}">
-    <div class="form-row">
-      <label class="form-label">${t("overview.on_duration")}</label>
-      <input class="form-input" id="ctrl-water-duration" type="number" min="1" max="60" value="${waterDuration}">
-    </div>
-    <div class="form-row">
-      <label class="form-label">${t("overview.off_interval")}</label>
-      <input class="form-input" id="ctrl-water-interval" type="number" min="1" max="120" value="${waterInterval}">
-    </div>
-    <button class="btn-primary" id="btn-apply-schedule">${t("overview.apply_schedule")}</button>
-  </div>`;
+  let petIntakeHtml = "";
+  if (device.device_type === "dockstream_rfid") {
+    const pets = device.pets || [];
+    if (pets.length) {
+      const rows = pets.map(p => `
+      <div class="intake-row">
+        <div class="intake-avatar">${p.image_url ? `<img src="${escHtml(p.image_url)}" alt="${escHtml(p.name)}">` : "🐾"}</div>
+        <div class="intake-info">
+          <div class="intake-name">${escHtml(p.name || t("pet.unnamed"))}</div>
+          <div class="intake-stats">${p.visits ? t("overview.pet_intake_stats", {duration: fmtDuration(p.duration_secs || 0), n: p.visits}) : t("overview.pet_intake_none")}</div>
+        </div>
+        <div class="intake-value">${escHtml(fmtWater(p.grams || 0))}</div>
+      </div>`).join("");
+      petIntakeHtml = `
+  <div class="tab-section-heading" style="margin-top:18px">${t("overview.pet_activity")}</div>
+  <div class="intake-list">${rows}</div>`;
+    }
   }
 
   if (device.device_type === "one_rfid") {
@@ -257,7 +234,51 @@ function buildOverviewTab(device) {
     </div>
     ${intakeHtml}
     ${cleanHtml}
-  </div>${controlsHtml}`;
+  </div>${petIntakeHtml}`;
+}
+
+// ── Controls tab (fountains) ──────────────────────────────────────────────
+function buildControlsTab(device) {
+  const pumpOn = !device.waterStopSwitch;
+  const lightOn = !!device.lightSwitch;
+  const filterLedOn = !!device.filterLedSwitch;
+  const waterType = device.useWaterType ?? 0;
+  const waterInterval = device.useWaterInterval ?? 15;
+  const waterDuration = device.useWaterDuration ?? 15;
+  return `
+  <div class="toggle-list">
+    <div class="toggle-row">
+      <span class="toggle-label">${t("overview.pump")}</span>
+      <button class="toggle-switch ${pumpOn ? "sw-on" : "sw-off"}" id="ctrl-pump"></button>
+    </div>
+    <div class="toggle-row">
+      <span class="toggle-label">${t("overview.light")}</span>
+      <button class="toggle-switch ${lightOn ? "sw-on" : "sw-off"}" id="ctrl-light"></button>
+    </div>
+    <div class="toggle-row">
+      <span class="toggle-label">${t("overview.filter_indicator")}</span>
+      <button class="toggle-switch ${filterLedOn ? "sw-on" : "sw-off"}" id="ctrl-filter-led"></button>
+    </div>
+  </div>
+  <div class="form-row">
+    <label class="form-label">${t("overview.flow_mode")}</label>
+    <select class="form-select" id="ctrl-water-type">
+      <option value="0" ${waterType === 0 ? "selected" : ""}>${t("overview.flow_continuous")}</option>
+      <option value="1" ${waterType === 1 ? "selected" : ""}>${t("overview.flow_intermittent")}</option>
+      <option value="2" ${waterType === 2 ? "selected" : ""}>${t("overview.flow_smart")}</option>
+    </select>
+  </div>
+  <div id="intermittent-settings" style="${waterType === 1 ? "" : "display:none"}">
+    <div class="form-row">
+      <label class="form-label">${t("overview.on_duration")}</label>
+      <input class="form-input" id="ctrl-water-duration" type="number" min="1" max="60" value="${waterDuration}">
+    </div>
+    <div class="form-row">
+      <label class="form-label">${t("overview.off_interval")}</label>
+      <input class="form-input" id="ctrl-water-interval" type="number" min="1" max="120" value="${waterInterval}">
+    </div>
+    <button class="btn-primary" id="btn-apply-schedule">${t("overview.apply_schedule")}</button>
+  </div>`;
 }
 
 // ── Maintenance tab ───────────────────────────────────────────────────────
@@ -311,14 +332,6 @@ function buildMaintenanceTab(device) {
       <input class="form-input" id="maint-housing-interval" type="number" min="1" max="365" value="${device.housing_cleaning_interval_days ?? 30}" style="flex:1">
       <button class="btn-secondary" id="btn-record-housing" style="flex-shrink:0">${t("maint.record_housing")}</button>
     </div>
-
-    <div class="tab-section-heading">${t("maint.battery")}</div>
-    <div class="form-row">
-      <label class="form-label">${t("maint.battery_low_threshold")}</label>
-      <input class="form-input" id="maint-battery-low" type="number" min="1" max="99" value="${device.battery_low_pct ?? 20}">
-    </div>
-    <p class="form-hint">${t("maint.battery_low_hint")}</p>
-    <button class="btn-secondary" id="btn-save-battery-low" style="width:100%;margin-bottom:18px">${t("maint.save_threshold")}</button>
 
     <div class="tab-section-heading">${t("maint.feed_sounds")}</div>
     <p class="form-hint">${t("maint.feed_sounds_hint")}</p>
@@ -753,7 +766,6 @@ function buildNotificationsTab(device) {
     { key: "bowl_due",      label: t("notif.bowl_due") },
     { key: "housing_due",   label: t("notif.housing_due") },
     { key: "power_battery", label: t("notif.power_battery") },
-    { key: "battery_low",   label: t("notif.battery_low") },
     { key: "offline",       label: t("notif.offline") },
   ] : [
     { key: "water_low",    label: t("notif.water_low") },
@@ -768,14 +780,21 @@ function buildNotificationsTab(device) {
     (device.notify_mobile_service && !_mobileTargets.find(t => t.service === device.notify_mobile_service)
       ? `<option value="${escHtml(device.notify_mobile_service)}" selected>${escHtml(device.notify_mobile_service)}</option>` : "");
 
+  const batteryLowRow = isFeeder ? `
+    <div class="toggle-row">
+      <span class="toggle-label">${t("notif.battery_low")}</span>
+      <input class="form-input" id="notif-battery-low-pct" type="number" min="0" max="99" value="${device.battery_low_pct ?? 20}" style="width:70px;text-align:center">
+    </div>` : "";
+
   return `
   <div class="tab-section-heading">${t("notif.alert_conditions")}</div>
   <div class="toggle-list">
     ${checks.map(c => `<div class="toggle-row">
       <span class="toggle-label">${c.label}</span>
       <input type="checkbox" class="notif-check" data-key="${c.key}" ${notif[c.key] !== false ? "checked" : ""}>
-    </div>`).join("")}
+    </div>`).join("")}${batteryLowRow}
   </div>
+  ${isFeeder ? `<p class="form-hint">${t("notif.battery_low_hint")}</p>` : ""}
 
   <div class="tab-section-heading" style="margin-top:18px">${t("notif.channels")}</div>
   <div class="toggle-list" style="margin-bottom:14px">
@@ -811,7 +830,7 @@ function buildNotificationsTab(device) {
 // ── Wire device tab handlers ──────────────────────────────────────────────
 function wireDeviceTabHandlers(tabName) {
   const d = _currentDevice;
-  if (tabName === "overview") {
+  if (tabName === "controls") {
     const pump = document.getElementById("ctrl-pump");
     const light = document.getElementById("ctrl-light");
     const filterLed = document.getElementById("ctrl-filter-led");
@@ -847,7 +866,8 @@ function wireDeviceTabHandlers(tabName) {
         } catch(e) { alert(t("overview.cmd_failed", {error: e.message})); }
       };
     }
-
+  }
+  else if (tabName === "overview") {
     // Feeder controls
     const feedNow = document.getElementById("btn-feed-now");
     const openLid = document.getElementById("btn-open-lid");
@@ -999,17 +1019,6 @@ function wireDeviceTabHandlers(tabName) {
         _patchDevice(d.serial, { last_housing_cleaned_ts: last_ts, housing_cleaning_interval_days: interval });
       };
     }
-    const saveBatteryLow = document.getElementById("btn-save-battery-low");
-    if (saveBatteryLow) {
-      saveBatteryLow.onclick = async () => {
-        const val = Math.max(1, Math.min(99, parseInt(document.getElementById("maint-battery-low").value) || 20));
-        await api("POST", `/api/devices/${d.serial}`, { battery_low_pct: val });
-        _patchDevice(d.serial, { battery_low_pct: val });
-        saveBatteryLow.textContent = t("overview.saved");
-        setTimeout(() => { saveBatteryLow.textContent = t("maint.save_threshold"); }, 1500);
-      };
-    }
-
     // Fountain: editable days-remaining inputs auto-save on change
     const filterDaysEl = document.getElementById("maint-filter-days");
     if (filterDaysEl) {
@@ -1143,6 +1152,7 @@ function wireDeviceTabHandlers(tabName) {
         document.querySelectorAll(".notif-check[data-key]").forEach(cb => {
           notif[cb.dataset.key] = cb.checked;
         });
+        const battLowEl = document.getElementById("notif-battery-low-pct");
         const payload = {
           notifications: notif,
           notify_bell: document.getElementById("nchan-bell")?.checked !== false,
@@ -1150,6 +1160,7 @@ function wireDeviceTabHandlers(tabName) {
           notify_email_address: (document.getElementById("nchan-email-addr")?.value || "").trim(),
           notify_mobile: !!document.getElementById("nchan-mobile")?.checked,
           notify_mobile_service: document.getElementById("nchan-mobile-svc")?.value || "",
+          ...(battLowEl ? { battery_low_pct: Math.max(0, Math.min(99, parseInt(battLowEl.value) || 0)) } : {}),
         };
         await api("POST", `/api/devices/${d.serial}`, payload);
         _patchDevice(d.serial, { ...payload });
