@@ -1,8 +1,8 @@
-name: Petlibro Local
+name: Petlibro Local (fork)
 description: Local MQTT control for Petlibro fountains and feeders — no cloud required
-url: https://github.com/smcneece/petlibro-local
-version: "2026.08.7"
-slug: petlibro_local
+url: https://github.com/drakulix/petlibro-local
+version: "2026.08.28"
+slug: petlibro_local_fork
 init: false
 arch:
   - aarch64

@@ -1,5 +1,11 @@
 # Petlibro Local - Home Assistant App
 
+## Don't use this
+
+This is a fork for me to test integration for the PLAF109 Polar Wet Food Feeder (which I'll hopefully get to upstream once everything works).
+
+Use [upstream](https://github.com/smcneece/petlibro-local)!!!
+
 > ### EARLY BETA
 > This app is in early beta testing and is open to anyone willing to test it. You should be comfortable with Home Assistant, Mosquitto broker configuration, and local DNS overrides before attempting setup. Bug reports and feedback are very welcome; please use [GitHub Issues](https://github.com/smcneece/petlibro-local/issues).
 
